@@ -5,7 +5,6 @@ import numpy as np
 from ocatari.core import OCAtari
 from ocatari.ram.game_objects import NoObject
 
-from .utils import is_constant
 
 class WorldModel():
     def __init__(self, game):
