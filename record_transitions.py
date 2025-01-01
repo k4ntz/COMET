@@ -39,7 +39,7 @@ class Renderer:
         self.keys2actions = self.env.unwrapped.get_keys_to_action()
         self.frame = 0
         self.transitions = []
-        self.total_frames = 10000
+        self.total_frames = 1000
         self.pbar = tqdm(total=self.total_frames)
 
     def run(self):
@@ -50,14 +50,13 @@ class Renderer:
                 action = self._get_action()
                 obs, reward, term, trunc, info = self.env.step(action)
                 self.env.render()
-                self.transitions.append(((self.env.get_ram(), self.env.getScreenRGB()), action, reward, term, trunc))
+                self.transitions.append(((self.env.objects, self.env.get_ram(), self.env.getScreenRGB()), action, reward, term, trunc))
                 if term or trunc:
                     self.env.reset()
                 self.frame += 1
                 self.pbar.update(1)
                 if self.frame % self.total_frames == 0:
-                    os.makedirs("transitions", exist_ok=True)
-                    pkl.dump(self.transitions, open(f"transitions/{args.game}.pkl", "wb"))
+                    self.save_transitions()
         pygame.quit()
 
     def _get_action(self):
@@ -92,6 +91,38 @@ class Renderer:
                 if (event.key,) in self.keys2actions.keys():
                     self.current_keys_down.remove(event.key)
 
+    def save_transitions(self):
+        objs = np.array([t[0][0] for t in self.transitions])
+        rams = np.array([t[0][1] for t in self.transitions])
+        rgbs = np.array([t[0][2] for t in self.transitions])
+        actions = [t[1] for t in self.transitions]
+        rewards = np.array([t[2] for t in self.transitions])
+        terms = np.array([t[3] for t in self.transitions])
+        truncs = np.array([t[4] for t in self.transitions])
+
+        actuples = []
+        for i, action_n in enumerate(actions):
+            action = self.env.get_action_meanings()[action_n]
+            actpl = [0, 0, 0] # x_axis, y_axis, button
+            if "FIRE" in action:
+                actpl[2] = 1
+            if "LEFT" in action:
+                actpl[0] = -1
+            elif "RIGHT" in action:
+                actpl[0] = 1
+            if "DOWN" in action:
+                actpl[1] = -1
+            elif "UP" in action:
+                actpl[1] = +1
+            actuples.append(tuple(actpl))
+
+        os.makedirs("transitions", exist_ok=True)
+        if os.path.exists(f"transitions/{args.game}.pkl"):
+            print("File already exists. Overwrite? [y/n]")
+            if input() != "y":
+                return
+        pkl.dump((objs, rams, rgbs, np.array(actuples), rewards, terms, truncs), 
+                 open(f"transitions/{args.game}.pkl", "wb"))
 
 if __name__ == "__main__":
     renderer = Renderer(args.game)
