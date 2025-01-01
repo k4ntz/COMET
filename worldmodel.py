@@ -5,7 +5,7 @@ import numpy as np
 from ocatari.core import OCAtari
 from ocatari.ram.game_objects import NoObject
 
-from .utils import is_constant
+from utils import get_model
 
 class WorldModel():
     def __init__(self, game):
@@ -17,12 +17,12 @@ class WorldModel():
         # build the slots correspondance
         slots = {}
         k = 0
-        for cat, nb in self.env.max_objects_per_cat.items():
+        for cat, nb in self.oc_env.max_objects_per_cat.items():
             slots[cat] = k # [i for i in range(k, k+nb)]
             k += nb
         self.slots = slots
 
-        np.random.set_seed(0)
+        np.random.seed(0)
         random.seed(0)
     
     @property
@@ -37,7 +37,7 @@ class WorldModel():
         objs, rams, rgbs, actions, rewards, terms, truncs = buffer
         n = len(objs)
         sample = random.sample(range(0, n), N)
-        ost = np.aray([objs[i] for i in sample])
+        ost = np.array([objs[i] for i in sample])
         rst = np.array([rams[i] for i in sample])
         at = np.array([actions[i] for i in sample])
         rt = np.array([rewards[i] for i in sample])
@@ -62,7 +62,7 @@ class WorldModel():
         # getting the objectives
         obj_slot = self.slots[name]
         selected_obj = visible_ost[:, obj_slot]
-        xs, ys, ws, hs = np.zeros(nstates)
+        xs, ys, ws, hs = np.zeros(nstates), np.zeros(nstates), np.zeros(nstates), np.zeros(nstates)
         for j, obj in enumerate(selected_obj):
             x, y, w, h = obj.xywh
             xs[j] = x
@@ -74,7 +74,21 @@ class WorldModel():
         
     def find_ram(self, name):
         # finds the ram of the non constant properties of the object(s) with the given name
-        pass
+        _, rst, _, _, _ = self.transitions
+        xs, ys, ws, hs, is_visible = self.tracked_objects[name]
+        ram_states = rst[is_visible]
+
+        if np.all(xs[:] == xs[0]):
+            self.objects_properties[name + "_x"] = str(xs[0])
+        else:
+            model = get_model()
+            model.fit(ram_states, xs)
+
+        if np.all(ys[:] == ys[0]):
+            self.objects_properties[name + "_y"] = str(ys[0])
+        else:
+            model = get_model()
+            model.fit(ram_states, ys)
 
     def find_transitions(self):
         # finds the transitions that contain the object with the given name

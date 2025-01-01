@@ -3,3 +3,5 @@
 *.pyc
 env/
 .DS_Store
+*.zip
+transitions/
