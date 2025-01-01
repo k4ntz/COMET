@@ -17,5 +17,5 @@ class GameObject():
         self.xs, self.ys, self.ws, self.hs, \
             self.visibles = [], [], [], [], []
 
-    def __str__(self):
+    def __repr__(self):
         return f"{self.name}"

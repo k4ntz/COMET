@@ -7,6 +7,7 @@ from ocatari.ram.game_objects import NoObject
 from ocatari.vision.utils import find_objects
 
 from gameobject import GameObject
+from utils import get_model
 
 class WorldModel():
     def __init__(self, game):
@@ -19,7 +20,7 @@ class WorldModel():
         # build the slots correspondance
         slots = {}
         k = 0
-        for cat, nb in self.env.max_objects_per_cat.items():
+        for cat, nb in self.oc_env.max_objects_per_cat.items():
             slots[cat] = k # [i for i in range(k, k+nb)]
             k += nb
         self.slots = slots
@@ -96,7 +97,7 @@ class WorldModel():
         # getting the objectives
         obj_slot = self.slots[name]
         selected_obj = visible_ost[:, obj_slot]
-        xs, ys, ws, hs = np.zeros(nstates)
+        xs, ys, ws, hs = np.zeros(nstates), np.zeros(nstates), np.zeros(nstates), np.zeros(nstates)
         for j, obj in enumerate(selected_obj):
             x, y, w, h = obj.xywh
             xs[j] = x
@@ -108,7 +109,21 @@ class WorldModel():
         
     def find_ram(self, name):
         # finds the ram of the non constant properties of the object(s) with the given name
-        pass
+        _, rst, _, _, _ = self.transitions
+        xs, ys, ws, hs, is_visible = self.tracked_objects[name]
+        ram_states = rst[is_visible]
+
+        if np.all(xs[:] == xs[0]):
+            self.objects_properties[name + "_x"] = str(xs[0])
+        else:
+            model = get_model()
+            model.fit(ram_states, xs)
+
+        if np.all(ys[:] == ys[0]):
+            self.objects_properties[name + "_y"] = str(ys[0])
+        else:
+            model = get_model()
+            model.fit(ram_states, ys)
 
     def find_transitions(self):
         # finds the transitions that contain the object with the given name
