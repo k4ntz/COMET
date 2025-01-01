@@ -65,7 +65,8 @@ class Renderer:
         pressed_keys.sort()
         pressed_keys = tuple(pressed_keys)
         if pressed_keys in self.keys2actions.keys():
-            return self.keys2actions[pressed_keys]
+            action = self.keys2actions[pressed_keys]
+            return self.env.get_action_meanings().index(action.name)
         else:
             return 0  # NOOP
 
