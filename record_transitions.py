@@ -29,7 +29,7 @@ class Renderer:
     env: gym.Env
 
     def __init__(self, env_name: str):
-        self.env = OCAtari(env_name, mode="ram", hud=True, render_mode="human",
+        self.env = OCAtari(env_name, mode="vision", hud=True, render_mode="human",
                            render_oc_overlay=True, frameskip=1)
         self.env.reset()
         self.env.render()  # initialize pygame video system
@@ -39,7 +39,7 @@ class Renderer:
         self.keys2actions = self.env.unwrapped.get_keys_to_action()
         self.frame = 0
         self.transitions = []
-        self.total_frames = 1000
+        self.total_frames = 10000
         self.pbar = tqdm(total=self.total_frames)
 
     def run(self):

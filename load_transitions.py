@@ -18,7 +18,7 @@ objs, rams, rgbs, actions, rewards, terms, truncs = transitions
 
 
 n = len(objs)
-selected = random.sample(range(0, n), 5000)
+selected = random.sample(range(0, n), 500)
 st = np.array([rams[i] for i in selected])
 att = np.array([actions[i] for i in selected])
 rt = np.array([rewards[i] for i in selected])
