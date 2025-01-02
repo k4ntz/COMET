@@ -19,7 +19,7 @@ class WorldModel():
         # build the slots correspondance
         slots = {}
         k = 0
-        for cat, nb in self.oc_env.max_objects_per_cat.items():
+        for cat, nb in self.env.max_objects_per_cat.items():
             slots[cat] = k # [i for i in range(k, k+nb)]
             k += nb
         self.slots = slots
@@ -75,6 +75,7 @@ class WorldModel():
                 obj.ws.append(w)
                 obj.hs.append(h)
             else:
+                import ipdb; ipdb.set_trace()
                 raise ValueError("More than one object detected.")
 
     def track_object(self, name):
