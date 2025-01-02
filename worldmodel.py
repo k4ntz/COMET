@@ -11,8 +11,8 @@ from utils import get_model
 
 class WorldModel():
     def __init__(self, game):
-        self.env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
-        self.transitions = None
+        self.oc_env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
+        self.sampled_transitions = None
         self.objects = []
         self.tracked_objects = {}
         self.objects_properties = {}
@@ -30,7 +30,7 @@ class WorldModel():
     
     @property
     def game(self):
-        return self.env.game_name
+        return self.oc_env.game_name
 
     def load_transitions(self):
         """
@@ -40,8 +40,8 @@ class WorldModel():
         self.objs, self.rams, self.rgbs, self.actions, \
             self.rewards, self.terms, self.truncs = buffer
     
-    def sameple_transitions(self, N):
-        n = len(objs)
+    def sample_transitions(self, N):
+        n = len(self.objs)
         sample = random.sample(range(0, n), N)
         ost = np.array([self.objs[i] for i in sample])
         rst = np.array([self.rams[i] for i in sample])
@@ -78,16 +78,15 @@ class WorldModel():
             else:
                 raise ValueError("More than one object detected.")
 
-        
     def track_object(self, name):
         """
         If the object is visible, track its properties.
         """
-        if self.transitions == None:
-            print("Please load transitions before proceeding.")
+        if self.sampled_transitions == None:
+            print("Please load and sample transitions before proceeding.")
             return
         
-        ost, _, _, _, _ = self.transitions
+        ost, _, _, _, _ = self.sampled_transitions
 
         # filtering invisible objects
         is_visible = np.array([name in [o.category for o in objs] for objs in ost])
