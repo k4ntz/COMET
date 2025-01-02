@@ -3,11 +3,10 @@ import pickle as pkl
 import numpy as np
 
 from ocatari.core import OCAtari
-from ocatari.ram.game_objects import NoObject
 from ocatari.vision.utils import find_objects
 
 from gameobject import GameObject
-from utils import get_model
+from utils import remove_constant, get_model
 
 class WorldModel():
     def __init__(self, game):
@@ -108,21 +107,24 @@ class WorldModel():
         
     def find_ram(self, name):
         # finds the ram of the non constant properties of the object(s) with the given name
-        _, rst, _, _, _ = self.transitions
+        _, rst, _, _, _ = self.sampled_transitions
         xs, ys, ws, hs, is_visible = self.tracked_objects[name]
-        ram_states = rst[is_visible]
+        all_states = rst[is_visible]
+        states, states_poses = remove_constant(all_states)
+        import ipdb; ipdb.set_trace()
+        vnames = [f"ram_{i}" for i in states_poses]
 
         if np.all(xs[:] == xs[0]):
             self.objects_properties[name + "_x"] = str(xs[0])
         else:
             model = get_model()
-            model.fit(ram_states, xs)
+            model.fit(states, xs, variable_names=vnames)
 
         if np.all(ys[:] == ys[0]):
             self.objects_properties[name + "_y"] = str(ys[0])
         else:
             model = get_model()
-            model.fit(ram_states, ys)
+            model.fit(states, ys, variable_names=vnames)
 
     def find_transitions(self):
         # finds the transitions that contain the object with the given name
