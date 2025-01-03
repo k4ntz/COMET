@@ -15,7 +15,6 @@ warnings.filterwarnings("ignore")
 class WorldModel():
     def __init__(self, game):
         self.oc_env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
-        self.sampled_transitions = None
         self.objects = []
         self.tracked_objects = {}
         self.objects_properties = {}
@@ -35,26 +34,26 @@ class WorldModel():
     def game(self):
         return self.oc_env.game_name
 
-    def load_transitions(self):
+    def load_transitions(self, sample_k=None):
         """
-        Load transitions of the game.
+        Load (a subset of) transitions of the game.
         """
         buffer = pkl.load(open(f'transitions/{self.game}.pkl', 'rb'))
-        self.objs, self.rams, self.rgbs, self.actions, \
-            self.rewards, self.terms, self.truncs = buffer
-    
-    def sample_transitions(self, N):
-        """
-        Sample a subset of N transitions and save the subset.
-        """
-        n = len(self.objs)
-        sample = random.sample(range(0, n), N)
-        ost = np.array([self.objs[i] for i in sample])
-        rst = np.array([self.rams[i] for i in sample])
-        at = np.array([self.actions[i] for i in sample])
-        rt = np.array([self.rewards[i] for i in sample])
-        nrst = np.array([self.rams[i+1] for i in sample])
-        self.sampled_transitions = ost, rst, at, rt, nrst
+        objs, rams, rgbs, actions, rewards, terms, truncs = buffer
+        n = len(rams)
+        if sample_k is None:
+            self.sample = None
+            self.objs, self.rams, self.next_rams, self.rgbs, \
+                self.actions, self.rewards, self.terms, self.truncs \
+                    = objs[:-1], rams[:-1], rams[1:], rgbs[:-1], \
+                        actions[:-1], rewards[:-1], terms[:-1], truncs[:-1]
+        else:
+            sample = np.array(random.sample(range(0, n-1), sample_k))
+            self.sample = sample
+            self.objs, self.rams, self.next_rams, self.rgbs, \
+                self.actions, self.rewards, self.terms, self.truncs \
+                    = objs[sample], rams[sample], rams[sample+1], rgbs[sample], \
+                        actions[sample], rewards[sample], terms[sample], truncs[sample]
     
     def add_object(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210):
         """
@@ -90,34 +89,6 @@ class WorldModel():
                 obj.ws.append(None)
                 obj.hs.append(None)
 
-    def track_object(self, name):
-        """
-        If the object is visible, track its properties on sampled transitions.
-        """
-        if self.sampled_transitions == None:
-            print("Please load and sample transitions before proceeding.")
-            return
-        
-        ost, _, _, _, _ = self.sampled_transitions
-
-        # filtering invisible objects
-        is_visible = np.array([name in [o.category for o in objs] for objs in ost])
-        visible_ost = ost[is_visible]
-        nstates = len(visible_ost)
-
-        # getting the objectives
-        obj_slot = self.slots[name]
-        selected_obj = visible_ost[:, obj_slot]
-        xs, ys, ws, hs = np.zeros(nstates), np.zeros(nstates), np.zeros(nstates), np.zeros(nstates)
-        for j, obj in enumerate(selected_obj):
-            x, y, w, h = obj.xywh
-            xs[j] = x
-            ys[j] = y
-            ws[j] = w
-            hs[j] = h
-
-        self.tracked_objects[name] = xs, ys, ws, hs, is_visible
-
     def regress(self, rams, objective, vnames, property, obj):
         """
         Perform regression of an object's property on non constant ram states.
@@ -131,7 +102,6 @@ class WorldModel():
             model.fit(rams, objective, variable_names=vnames)
             best = model.get_best()
             eq = best['equation']
-            # import ipdb; ipdb.set_trace()
             print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
             if input() == 'y':
                 self.objects_properties[obj + "_" + property] = eq
@@ -142,25 +112,8 @@ class WorldModel():
                 eq = model.equations_.loc[idx]['equation']
                 self.objects_properties[obj + "_" + property] = eq
             print(f"Storing equation: `{eq}`.")
-        
+
     def find_ram(self, name):
-        """
-        Find all the properties formulae for the given object.
-        Constant ram states are filtered out before running the regression.
-        """
-        _, rst, _, _, _ = self.sampled_transitions
-        xs, ys, ws, hs, is_visible = self.tracked_objects[name]
-        visible_states = rst[is_visible]
-        nc_rams, states_poses = remove_constant(visible_states)
-        import ipdb; ipdb.set_trace()
-        vnames = [f"ram_{i}" for i in states_poses]
-
-        self.regress(nc_rams, xs, vnames, "x", name)
-        self.regress(nc_rams, ys, vnames, "y", name)
-        self.regress(nc_rams, ws, vnames, "w", name)
-        self.regress(nc_rams, hs, vnames, "h", name)
-
-    def find_ram_from_rgb(self, name):
         """
         Find the properties formulae for the given object.
         Constant ram states are filtered out before running the regression.
@@ -169,14 +122,11 @@ class WorldModel():
         obj = self.objects[obj_slot]
 
         visibles = np.array(obj.visibles)
-        nvisibles = np.sum(visibles)
-        N = 1000
-        sample = random.sample(range(0, nvisibles), N)
-        rams = self.rams[visibles][sample]
-        xs = np.array(obj.xs)[obj.visibles][sample]
-        ys = np.array(obj.ys)[obj.visibles][sample]
-        ws = np.array(obj.ws)[obj.visibles][sample]
-        hs = np.array(obj.hs)[obj.visibles][sample]
+        rams = self.rams[visibles]
+        xs = np.array(obj.xs)[visibles]
+        ys = np.array(obj.ys)[visibles]
+        ws = np.array(obj.ws)[visibles]
+        hs = np.array(obj.hs)[visibles]
         nc_rams, states_poses = remove_constant(rams)
         vnames = [f"ram_{i}" for i in states_poses]
 
