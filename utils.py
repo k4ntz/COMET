@@ -17,8 +17,8 @@ def remove_constant(all_states):
 
 def get_model():
     model = PySRRegressor(
-        niterations = 100,  # < Increase me for better results
-        maxsize = 15,
+        niterations = 80,  # < Increase me for better results
+        maxsize = 10,
         binary_operators = ["+", "-", "max", "min"],
         elementwise_loss = "loss(prediction, target) = (prediction - target)^2",
     )

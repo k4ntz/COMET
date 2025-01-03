@@ -1,12 +1,16 @@
 import random
+import warnings
 import pickle as pkl
 import numpy as np
+import pandas
 
 from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
 
 from gameobject import GameObject
 from utils import remove_constant, get_model
+
+warnings.filterwarnings("ignore")
 
 class WorldModel():
     def __init__(self, game):
@@ -19,7 +23,7 @@ class WorldModel():
         # build the slots correspondance
         slots = {}
         k = 0
-        for cat, nb in self.env.max_objects_per_cat.items():
+        for cat, nb in self.oc_env.max_objects_per_cat.items():
             slots[cat] = k # [i for i in range(k, k+nb)]
             k += nb
         self.slots = slots
@@ -33,13 +37,16 @@ class WorldModel():
 
     def load_transitions(self):
         """
-        Load transitions of the game, sample a subset of N transitions and save the subset.
+        Load transitions of the game.
         """
         buffer = pkl.load(open(f'transitions/{self.game}.pkl', 'rb'))
         self.objs, self.rams, self.rgbs, self.actions, \
             self.rewards, self.terms, self.truncs = buffer
     
     def sample_transitions(self, N):
+        """
+        Sample a subset of N transitions and save the subset.
+        """
         n = len(self.objs)
         sample = random.sample(range(0, n), N)
         ost = np.array([self.objs[i] for i in sample])
@@ -75,12 +82,17 @@ class WorldModel():
                 obj.ws.append(w)
                 obj.hs.append(h)
             else:
-                import ipdb; ipdb.set_trace()
-                raise ValueError("More than one object detected.")
+                # import ipdb; ipdb.set_trace()
+                # raise ValueError("More than one object detected.")
+                obj.visibles.append(False)
+                obj.xs.append(None)
+                obj.ys.append(None)
+                obj.ws.append(None)
+                obj.hs.append(None)
 
     def track_object(self, name):
         """
-        If the object is visible, track its properties.
+        If the object is visible, track its properties on sampled transitions.
         """
         if self.sampled_transitions == None:
             print("Please load and sample transitions before proceeding.")
@@ -105,27 +117,73 @@ class WorldModel():
             hs[j] = h
 
         self.tracked_objects[name] = xs, ys, ws, hs, is_visible
+
+    def regress(self, rams, objective, vnames, property, obj):
+        """
+        Perform regression of an object's property on non constant ram states.
+        """
+        if np.all(objective[:] == objective[0]):
+            print(f"\nProperty {property} of object {obj} found constant with value {objective[0]}.")
+            self.objects_properties[obj + "_" + property] = str(objective[0])
+        else:
+            print(f"\nRegressing property {property} of object {obj}.")
+            model = get_model()
+            model.fit(rams, objective, variable_names=vnames)
+            best = model.get_best()
+            eq = best['equation']
+            # import ipdb; ipdb.set_trace()
+            print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
+            if input() == 'y':
+                self.objects_properties[obj + "_" + property] = eq
+            else:
+                print(model.equations_)
+                print("Enter the equation index that you would like to keep: [Enter digit]")
+                idx = int(input())
+                eq = model.equations_.loc[idx]['equation']
+                self.objects_properties[obj + "_" + property] = eq
+            print(f"Storing equation: `{eq}`.")
         
     def find_ram(self, name):
-        # finds the ram of the non constant properties of the object(s) with the given name
+        """
+        Find all the properties formulae for the given object.
+        Constant ram states are filtered out before running the regression.
+        """
         _, rst, _, _, _ = self.sampled_transitions
         xs, ys, ws, hs, is_visible = self.tracked_objects[name]
-        all_states = rst[is_visible]
-        states, states_poses = remove_constant(all_states)
+        visible_states = rst[is_visible]
+        nc_rams, states_poses = remove_constant(visible_states)
         import ipdb; ipdb.set_trace()
         vnames = [f"ram_{i}" for i in states_poses]
 
-        if np.all(xs[:] == xs[0]):
-            self.objects_properties[name + "_x"] = str(xs[0])
-        else:
-            model = get_model()
-            model.fit(states, xs, variable_names=vnames)
+        self.regress(nc_rams, xs, vnames, "x", name)
+        self.regress(nc_rams, ys, vnames, "y", name)
+        self.regress(nc_rams, ws, vnames, "w", name)
+        self.regress(nc_rams, hs, vnames, "h", name)
 
-        if np.all(ys[:] == ys[0]):
-            self.objects_properties[name + "_y"] = str(ys[0])
-        else:
-            model = get_model()
-            model.fit(states, ys, variable_names=vnames)
+    def find_ram_from_rgb(self, name):
+        """
+        Find the properties formulae for the given object.
+        Constant ram states are filtered out before running the regression.
+        """
+        obj_slot = self.slots[name]
+        obj = self.objects[obj_slot]
+
+        visibles = np.array(obj.visibles)
+        nvisibles = np.sum(visibles)
+        N = 1000
+        sample = random.sample(range(0, nvisibles), N)
+        rams = self.rams[visibles][sample]
+        xs = np.array(obj.xs)[obj.visibles][sample]
+        ys = np.array(obj.ys)[obj.visibles][sample]
+        ws = np.array(obj.ws)[obj.visibles][sample]
+        hs = np.array(obj.hs)[obj.visibles][sample]
+        nc_rams, states_poses = remove_constant(rams)
+        vnames = [f"ram_{i}" for i in states_poses]
+
+        self.regress(nc_rams, xs, vnames, "x", name)
+        self.regress(nc_rams, ys, vnames, "y", name)
+        self.regress(nc_rams, ws, vnames, "w", name)
+        self.regress(nc_rams, hs, vnames, "h", name)
 
     def find_transitions(self):
         # finds the transitions that contain the object with the given name
