@@ -1,17 +1,37 @@
 from worldmodel import WorldModel
+from argparse import ArgumentParser
+import pickle as pkl
+import os
 
-wm = WorldModel("Pong")
+parser = ArgumentParser("test parser")
+parser.add_argument("--game", type=str, default="Pong")
+parser.add_argument("--from-scratch", action="store_true")
 
-wm.load_transitions()
-wm.add_object("Player", rgb=(92, 186, 92), miny=30)
-wm.add_object("Ball", rgb=(236, 236, 236), miny=34, maxy=194)
-wm.add_object("Enemy", rgb=(213, 130, 74), miny=30)
+args = parser.parse_args()
+
+if args.from_scratch or not os.path.exists(f"worldmodels/{args.game}.pkl"):
+    print("Building world model from scratch for game", args.game)
+    wm = WorldModel(args.game)
+
+    wm.load_transitions()
+    wm.add_object("Player", rgb=(92, 186, 92), miny=30)
+    wm.add_object("Ball", rgb=(236, 236, 236), miny=34, maxy=194)
+    wm.add_object("Enemy", rgb=(213, 130, 74), miny=30)
+
+    for obj in wm.objects:
+        wm.detect_objects(obj)
+        wm.find_ram(obj.name)
+
+    os.makedirs("worldmodels", exist_ok=True)
+    pkl.dump(wm, open(f"worldmodels/{args.game}.pkl", "wb"))
+    print(f"World model saved in worldmodels/{args.game}.pkl")
+
+else:
+    wm = pkl.load(open(f"worldmodels/{args.game}.pkl", "rb"))
+
 
 for obj in wm.objects:
-    wm.detect_objects(obj)
-    wm.find_ram(obj.name)
-    break
+    obj.make_graph()
+    #
 
-player = wm.objects[0]
-
-import ipdb; ipdb.set_trace()
+# import ipdb; ipdb.set_trace()
