@@ -98,7 +98,9 @@ class WorldModel():
             self.objects_properties[obj + "_" + property] = str(objective[0])
         else:
             print(f"\nRegressing property {property} of object {obj}.")
-            model = get_model()
+            min_val = np.min(objective)
+            max_val = np.max(objective)
+            model = get_model(l1_loss=True, min_val=min_val, max_val=max_val)
             model.fit(rams, objective, variable_names=vnames)
             best = model.get_best()
             eq = best['equation']
