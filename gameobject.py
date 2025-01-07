@@ -54,9 +54,9 @@ class GameObject():
                     self.net.add_node(ram_match, label=ram_match, 
                     color=COLORS["blue"], x=20)
                     self.net.add_edge(prop, ram_match, label=self.equations[prop])
-                # else:
-                #     self.net.add_nodes([self.equations[prop]], label=[f'{self.equations[prop]}'], 
-                #     color=[COLORS["blue"]])
-                #     self.net.add_edges([(prop, self.equations[prop])])
+                else:
+                    self.net.add_node(self.equations[prop], label=f'{self.equations[prop]}', 
+                    color=COLORS["blue"])
+                    self.net.add_edge(prop, self.equations[prop])
         os.makedirs("graphs", exist_ok=True)
         self.net.show(f'graphs/{self.name}.html')
