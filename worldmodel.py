@@ -157,3 +157,16 @@ class WorldModel():
         for obj in self.objects: 
             ret += f"\n{obj}"
         return ret
+    
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Don't pickle baz
+        state["game"] = self.oc_env.game_name
+        del state["oc_env"]
+        return state
+    
+    def __setstate__(self, state):
+        game = state.pop("game")
+        self.__dict__.update(state)
+        # Add baz back since it doesn't exist in the pickle
+        self.oc_env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
