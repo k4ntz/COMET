@@ -8,7 +8,7 @@ from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
 
 from gameobject import GameObject
-from utils import remove_constant, get_model
+from utils import remove_constant, get_model, split_constant_variable_rams, extend_with_signed_rams
 
 warnings.filterwarnings("ignore")
 
@@ -129,13 +129,40 @@ class WorldModel():
         ys = np.array(obj.ys)[visibles]
         ws = np.array(obj.ws)[visibles]
         hs = np.array(obj.hs)[visibles]
-        nc_rams, states_poses = remove_constant(rams)
-        vnames = [f"ram_{i}" for i in states_poses]
+        nc_rams, rams_mapping = remove_constant(rams)
+        vnames = [f"ram_{i}" for i in rams_mapping]
 
         self.regress(nc_rams, xs, vnames, "x", name)
         self.regress(nc_rams, ys, vnames, "y", name)
         self.regress(nc_rams, ws, vnames, "w", name)
         self.regress(nc_rams, hs, vnames, "h", name)
+
+
+    def find_hidden_state(self, idx):
+        is_constant_at_state, non_cst_rams, non_cst_next_rams \
+            = split_constant_variable_rams(self.rams, self.next_rams, idx)
+        objective = non_cst_next_rams[:, idx]
+
+        nc_rams, rams_mapping = remove_constant(non_cst_rams)
+        extended_rams = extend_with_signed_rams(nc_rams)
+        extended_vnames = [f"s{i}" for i in rams_mapping] + [f"ss{i}" for i in rams_mapping]
+
+        print(f"\nRegressing hidden state of ram {idx}.")
+        model = get_model(l1_loss=True)
+        model.fit(extended_rams, objective, variable_names=extended_vnames)
+        best = model.get_best()
+        eq = best['equation']
+        print(f"Regression done. Best equation: `{eq}`")
+
+        nc_rams, rams_mapping = remove_constant(self.rams)
+        vnames = [f"ram_{i}" for i in rams_mapping]
+
+        print(f"\nRegressing when {idx} is constant.")
+        model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and"])
+        model.fit(nc_rams, is_constant_at_state, variable_names=vnames)
+        best = model.get_best()
+        eq = best['equation']
+        print(f"Regression done. Best equation: `{eq}`")
 
     def find_transitions(self):
         # finds the transitions that contain the object with the given name
