@@ -139,6 +139,9 @@ class WorldModel():
 
 
     def find_hidden_state(self, idx):
+        """
+        Find how to update a ram cell at next time step.
+        """
         is_constant_at_state, non_cst_rams, non_cst_next_rams \
             = split_constant_variable_rams(self.rams, self.next_rams, idx)
         objective = non_cst_next_rams[:, idx]
@@ -163,6 +166,22 @@ class WorldModel():
         best = model.get_best()
         eq = best['equation']
         print(f"Regression done. Best equation: `{eq}`")
+
+    def compute_accuracy(self, formulae):
+        """
+        Compute accuracy of formulae e.g. `ns[49] == s[49] - ss[58]`.
+        """
+        formulae = formulae.replace("mod", "np.mod")
+        formulae = formulae.replace("greater", "np.greater")
+        formulae = formulae.replace("equal", "np.equal")
+        formulae = formulae.replace("square", "np.square")
+        formulae = formulae.replace("neg", "np.negative")
+        formulae = formulae.replace("max", "np.maximum")
+        # do not delete the following, used in the formulae evaluation
+        sns, ns = self.next_rams.astype(np.int8).T, self.next_rams.T
+        ss, s  = self.rams.astype(np.int8).T, self.rams.T
+        count_matches = np.sum(eval(formulae))
+        print(f"Accuracy of regression: {count_matches / len(self.rams) * 100: .2f}%")
 
     def find_transitions(self):
         # finds the transitions that contain the object with the given name
