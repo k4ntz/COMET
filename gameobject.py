@@ -42,10 +42,11 @@ class GameObject():
     def make_graph(self):
         self.net = Network(notebook=True, directed=True)
         self.net.add_node(self.name, label=f'{self.name}', color=COLORS["red"], x = 0)
-        for prop in self.properties:
+        for prop in self.equations:
             if self.equations[prop] is not None:
                 self.net.add_node(prop, label=f'{prop}', color=COLORS["green"], x=10)
-                self.net.add_edge(self.name, prop)
+                if prop in self.properties: # if property, add edge to object
+                    self.net.add_edge(self.name, prop) 
                 if not isinstance(self.equations[prop], str):
                     self.equations[prop] = str(self.equations[prop])
                 if "ram" in self.equations[prop]:
@@ -58,5 +59,18 @@ class GameObject():
                     self.net.add_node(self.equations[prop], label=f'{self.equations[prop]}', 
                     color=COLORS["blue"])
                     self.net.add_edge(prop, self.equations[prop])
+        
         os.makedirs("graphs", exist_ok=True)
         self.net.show(f'graphs/{self.name}.html')
+
+    @property
+    def connected_rams(self):
+        rams = []
+        for prop in self.properties:
+            if self.equations[prop] is not None:
+                if "ram" in self.equations[prop]:
+                    ram_pattern = r'ram_(\d{1,3})'
+                    ram_idx = re.search(ram_pattern, self.equations[prop]).group(1)
+                    if not ram_idx in rams:
+                        rams.append(ram_idx)
+        return rams        

@@ -20,7 +20,7 @@ if args.from_scratch or not os.path.exists(f"worldmodels/{args.game}.pkl"):
 
     for obj in wm.objects:
         wm.detect_objects(obj)
-        wm.find_ram(obj.name)
+        wm.find_ram(obj)
 
     os.makedirs("worldmodels", exist_ok=True)
     pkl.dump(wm, open(f"worldmodels/{args.game}.pkl", "wb"))
@@ -29,6 +29,10 @@ if args.from_scratch or not os.path.exists(f"worldmodels/{args.game}.pkl"):
 else:
     wm = pkl.load(open(f"worldmodels/{args.game}.pkl", "rb"))
 
+
+for obj in wm.objects:
+    wm.find_transitions(obj)
+    break
 
 for obj in wm.objects:
     obj.make_graph()
