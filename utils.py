@@ -6,12 +6,13 @@ import sympy
 BINOPS = ["+", "-", "max", "min"]
 
 def remove_constant(all_states):
+    ncells = len(all_states[0])
     to_remove = []
-    for i in range(128):
+    for i in range(ncells):
         if np.all(all_states[:, i] == all_states[0, i]):
             to_remove.append(i)
 
-    states_poses = list(range(128))
+    states_poses = list(range(ncells))
     states = deepcopy(all_states)
     for i in reversed(to_remove):
         states_poses.remove(i)

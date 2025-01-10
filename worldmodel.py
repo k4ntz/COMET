@@ -144,15 +144,19 @@ class WorldModel():
         """
         is_constant_at_state, non_cst_rams, non_cst_next_rams \
             = split_constant_variable_rams(self.rams, self.next_rams, idx)
+        non_cst_acts = self.actions[~is_constant_at_state]
         objective = non_cst_next_rams[:, idx]
 
         nc_rams, rams_mapping = remove_constant(non_cst_rams)
         extended_rams = extend_with_signed_rams(nc_rams)
-        extended_vnames = [f"s{i}" for i in rams_mapping] + [f"ss{i}" for i in rams_mapping]
+        nc_acts, acts_mapping = remove_constant(non_cst_acts)
+        extended_rams_and_acts = np.concatenate((extended_rams, nc_acts), axis=1)
+        extended_vnames = [f"s{i}" for i in rams_mapping] + [f"ss{i}" for i in rams_mapping] \
+                         + [f"a{i}" for i in acts_mapping]
 
         print(f"\nRegressing hidden state of ram {idx}.")
-        model = get_model(l1_loss=True)
-        model.fit(extended_rams, objective, variable_names=extended_vnames)
+        model = get_model(l1_loss=True, binops=["+", "-", "*", "/"])
+        model.fit(extended_rams_and_acts, objective, variable_names=extended_vnames)
         best = model.get_best()
         eq = best['equation']
         print(f"Regression done. Best equation: `{eq}`")
@@ -161,7 +165,7 @@ class WorldModel():
         vnames = [f"ram_{i}" for i in rams_mapping]
 
         print(f"\nRegressing when {idx} is constant.")
-        model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and"])
+        model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and", "mod"])
         model.fit(nc_rams, is_constant_at_state, variable_names=vnames)
         best = model.get_best()
         eq = best['equation']
@@ -180,6 +184,7 @@ class WorldModel():
         # do not delete the following, used in the formulae evaluation
         sns, ns = self.next_rams.astype(np.int8).T, self.next_rams.T
         ss, s  = self.rams.astype(np.int8).T, self.rams.T
+        a = self.actions.T
         count_matches = np.sum(eval(formulae))
         print(f"Accuracy of regression: {count_matches / len(self.rams) * 100: .2f}%")
 
