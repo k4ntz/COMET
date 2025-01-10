@@ -6,6 +6,7 @@ import pandas
 
 from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
+from ocatari.ram.game_objects import NoObject
 
 from gameobject import GameObject
 from utils import remove_constant, get_model, split_constant_variable_rams, extend_with_signed_rams
@@ -22,9 +23,15 @@ class WorldModel():
         # build the slots correspondance
         slots = {}
         k = 0
-        for cat, nb in self.oc_env.max_objects_per_cat.items():
-            slots[cat] = k # [i for i in range(k, k+nb)]
-            k += nb
+        for cat, max_nb in self.oc_env.max_objects_per_cat.items():
+            if max_nb == 1:
+                slots[cat] = k
+                k+=1
+            else:
+                for i in range(max_nb):
+                    slot_name = cat + str(i+1)
+                    slots[slot_name] = k
+                    k+=1
         self.slots = slots
 
         np.random.seed(0)
@@ -56,6 +63,34 @@ class WorldModel():
                     = objs[sample], rams[sample], rams[sample+1], rgbs[sample], \
                         actions[sample], rewards[sample], terms[sample], truncs[sample]
     
+    def load_objects(self):
+        """
+        Load objects from the transitions.
+        """
+        objects = []
+        for obj_name, slot_idx in self.slots.items():
+            rgb = self.objs[0][slot_idx].rgb
+            obj = GameObject(obj_name, rgb)
+            objects.append(obj)
+
+        for i, state in enumerate(self.objs):
+            for j, obj in enumerate(objects):
+                if type(state[j]) is NoObject:
+                    obj.visibles.append(False)
+                    obj.xs.append(None)
+                    obj.ys.append(None)
+                    obj.ws.append(None)
+                    obj.hs.append(None)
+                else:
+                    x, y, w, h = state[j].xywh
+                    obj.visibles.append(True)
+                    obj.xs.append(x)
+                    obj.ys.append(y)
+                    obj.ws.append(w)
+                    obj.hs.append(h)
+        self.objects = objects
+
+
     def add_object(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210):
         """
         Add an object to the world model.

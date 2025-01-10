@@ -13,6 +13,7 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 import os
 import pickle as pkl
+from copy import deepcopy
 
 parser = ArgumentParser()
 parser.add_argument("-g", "--game", type=str, default="Pong")
@@ -29,7 +30,7 @@ class Renderer:
     env: gym.Env
 
     def __init__(self, env_name: str):
-        self.env = OCAtari(env_name, mode="vision", hud=True, render_mode="human",
+        self.env = OCAtari(env_name, mode="ram", hud=True, render_mode="human",
                            render_oc_overlay=True, frameskip=1)
         self.env.reset()
         self.env.render()  # initialize pygame video system
@@ -50,7 +51,7 @@ class Renderer:
                 action = self._get_action()
                 obs, reward, term, trunc, info = self.env.step(action)
                 self.env.render()
-                self.transitions.append(((self.env.objects, self.env.get_ram(), self.env.getScreenRGB()), action, reward, term, trunc))
+                self.transitions.append(((deepcopy(self.env.objects), self.env.get_ram(), self.env.getScreenRGB()), action, reward, term, trunc))
                 if term or trunc:
                     self.env.reset()
                 self.frame += 1

@@ -13,7 +13,7 @@ COLORS = {
 class GameObject():
     instances = {}
 
-    def __init__(self, name, rgb, minx, maxx, miny, maxy):
+    def __init__(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210):
         self.name = name
         self.transitions = []
         self.rgb = rgb
