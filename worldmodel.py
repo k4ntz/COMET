@@ -3,6 +3,7 @@ import warnings
 import pickle as pkl
 import numpy as np
 import pandas
+import re
 
 from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
@@ -17,8 +18,7 @@ class WorldModel():
     def __init__(self, game):
         self.oc_env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
         self.objects = []
-        self.tracked_objects = {}
-        # self.objects_properties = {}
+        self.update_conditions = {}
 
         # build the slots correspondance
         slots = {}
@@ -165,7 +165,7 @@ class WorldModel():
         visibles = np.array(obj.visibles)
         rams = self.rams[visibles]
         nc_rams, rams_mapping = remove_constant(rams)
-        vnames = [f"ram_{i}" for i in rams_mapping]
+        vnames = [f"ram[{i}]" for i in rams_mapping]
 
         for prop in obj.properties:
             if prop != "visible":
@@ -179,18 +179,17 @@ class WorldModel():
         for obj in self.objects:
             self._find_ram(obj)
 
-    def _find_hidden_state(self, ram_idx, find_when_cst=False):
+    def _find_hidden_state(self, ram_idx, separate_on_cst=False):
         """
         Find how to update a ram cell at next time step.
         """
-        is_constant_at_state, non_cst_rams, non_cst_next_rams \
-            = split_constant_variable_rams(self.rams, self.next_rams, ram_idx)
-        non_cst_acts = self.actions[~is_constant_at_state]
+        if separate_on_cst:
+            is_constant_at_state, non_cst_rams, non_cst_next_rams \
+                = split_constant_variable_rams(self.rams, self.next_rams, ram_idx)
 
-        if find_when_cst:
             nc_rams, rams_mapping = remove_constant(self.rams)
-            vnames = [f"ram_{i}" for i in rams_mapping]
-            
+            vnames = [f"ram[{i}]" for i in rams_mapping]
+
             print(f"\nRegressing when {ram_idx} is constant.")
             model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and", "mod"])
             model.fit(nc_rams, is_constant_at_state, variable_names=vnames)
@@ -203,17 +202,26 @@ class WorldModel():
                 eq_idx = int(input())
                 eq = model.equations_.loc[eq_idx]['equation']
             print(f"Storing equation: `{eq}`.")
-            # return eq
+            self.update_conditions[f"ram[{ram_idx}]"] = eq
 
-        nc_rams, rams_mapping = remove_constant(non_cst_rams)
+            rams = non_cst_rams
+            acts = self.actions[~is_constant_at_state]
+            next_rams = non_cst_next_rams
+
+        else:
+            rams = self.rams
+            acts = self.actions
+            next_rams = self.next_rams
+
+        nc_rams, rams_mapping = remove_constant(rams)
         extended_rams = extend_with_signed_rams(nc_rams)
-        nc_acts, acts_mapping = remove_constant(non_cst_acts)
+        nc_acts, acts_mapping = remove_constant(acts)
         extended_rams_and_acts = np.concatenate((extended_rams, nc_acts), axis=1)
-        extended_vnames = [f"s{i}" for i in rams_mapping] + [f"ss{i}" for i in rams_mapping] \
-                         + [f"a{i}" for i in acts_mapping]
+        extended_vnames = [f"ram[{i}]" for i in rams_mapping] + [f"sram[{i}]" for i in rams_mapping] \
+                         + [f"act[{i}]" for i in acts_mapping]
 
         print(f"\nRegressing hidden state of ram {ram_idx}.")
-        objective = non_cst_next_rams[:, ram_idx]
+        objective = next_rams[:, ram_idx]
         model = get_model(l1_loss=True, binops=["+", "-", "*", "/", "mod"])
         model.fit(extended_rams_and_acts, objective, variable_names=extended_vnames)
         best = model.get_best()
@@ -224,8 +232,6 @@ class WorldModel():
             print("Enter the equation index that you would like to keep: [Enter digit]")
             eq_idx = int(input())
             eq = model.equations_.loc[eq_idx]['equation']
-            # self.objects_properties[obj_name + "_" + property] = eq
-        eq = eq.replace('s', "ram_")
         print(f"Storing equation: `{eq}`.")
         return eq
 
@@ -234,11 +240,15 @@ class WorldModel():
         print(obj.connected_rams)
         for ram_idx in obj.connected_rams:
             eq = self._find_hidden_state(int(ram_idx))
-            obj.equations[f"ram_{ram_idx}"] = eq
+            obj.equations[f"ram[{ram_idx}]"] = eq
 
-    def compute_accuracy(self, formulae):
+    def compute_accuracy(self, formulae, separate_on_cst=False):
         """
-        Compute accuracy of formulae e.g. `ns[49] == s[49] - ss[58]`.
+        Compute accuracy of formulae, e.g.
+        `nram[49] == ram[49] - sram[58]`
+        `nram[14] == ram[14] + act[1]`
+
+        If option separate_on_cst is on, accuracy is computed only on updated rams.
         """
         formulae = formulae.replace("mod", "np.mod")
         formulae = formulae.replace("greater", "np.greater")
@@ -246,12 +256,31 @@ class WorldModel():
         formulae = formulae.replace("square", "np.square")
         formulae = formulae.replace("neg", "np.negative")
         formulae = formulae.replace("max", "np.maximum")
-        # do not delete the following, used in the formulae evaluation
-        sns, ns = self.next_rams.astype(np.int8).T, self.next_rams.T
-        ss, s  = self.rams.astype(np.int8).T, self.rams.T
-        a = self.actions.T
+        # do not delete unused variables in the following,
+        # they are used in the formulae evaluation
+        if separate_on_cst:
+            pattern = r'nram\[(\d{1,3})\]'
+            match = re.search(pattern, formulae)
+            if match:
+                to_track = int(match.group(1))
+                is_cst, ram, nram = split_constant_variable_rams(self.rams, self.next_rams, to_track)
+                # import ipdb; ipdb.set_trace()
+                n = len(ram)
+                ram, nram = ram.T, nram.T
+                sram, snram = ram.astype(np.int8), nram.astype(np.int8)
+                act = self.actions[~is_cst].T
+            else:
+                print("No ram index found in formulae")
+                return
+        else:
+            snram, nram = self.next_rams.astype(np.int8).T, self.next_rams.T
+            sram, ram  = self.rams.astype(np.int8).T, self.rams.T
+            act = self.actions.T
+            n = len(self.rams)
         count_matches = np.sum(eval(formulae))
-        print(f"Accuracy of regression: {count_matches / len(self.rams) * 100: .2f}%")
+        accuracy = count_matches / n * 100
+        print(f"Accuracy of formulae `{formulae}`: {accuracy: .2f}%")
+        return accuracy
 
     def show_graph(self):
         # shows the graph of the objects
