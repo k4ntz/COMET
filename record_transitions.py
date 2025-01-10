@@ -29,8 +29,8 @@ class Renderer:
     env: gym.Env
 
     def __init__(self, env_name: str):
-        self.env = OCAtari(env_name, mode="vision", hud=True, render_mode="human",
-                           render_oc_overlay=True, frameskip=1)
+        self.env = OCAtari(env_name, mode="ram", hud=True, render_mode="human",
+                           render_oc_overlay=True, frameskip=1, repeat_action_probability=0)
         self.env.reset()
         self.env.render()  # initialize pygame video system
 
