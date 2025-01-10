@@ -29,15 +29,17 @@ def get_model(l1_loss=True, min_val=None, max_val=None, binops=BINOPS):
     extra_sympy_mappings = {}
     if min_val is not None:
         f = "max_" + str(min_val)
+        f = f.replace("-", "minus_")
         un_ops.append(f + "(x) = max(x, " + str(min_val) + ")")
         extra_sympy_mappings[f] = lambda x: sympy.Max(min_val, x)
     if max_val is not None:
-        f = "min_" + str(min_val)
+        f = "min_" + str(max_val)
+        f = f.replace("-", "minus_")
         un_ops.append(f + "(x) = min(x, " + str(max_val) + ")")
         extra_sympy_mappings[f] = lambda x: sympy.Min(max_val, x)
 
     return PySRRegressor(
-        niterations = 80,  # < Increase me for better results
+        niterations = 50,  # < Increase me for better results
         maxsize = 10,
         binary_operators = binops,
         unary_operators = un_ops,

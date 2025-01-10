@@ -157,7 +157,7 @@ class WorldModel():
             print(f"Storing equation: `{eq}`.")
 
 
-    def find_ram(self, obj):
+    def _find_ram(self, obj):
         """
         Find the properties formulae for the given object.
         Constant ram states are filtered out before running the regression.
@@ -172,15 +172,38 @@ class WorldModel():
                 objectives = np.array(obj.__getattribute__(f"{prop}s"))[visibles]
                 self.regress(nc_rams, objectives, vnames, prop, obj.name)
 
+    def find_connected_rams(self):
+        """
+        Find the connected rams for all objects of the environment.
+        """
+        for obj in self.objects:
+            self._find_ram(obj)
 
-    def find_hidden_state(self, ram_idx):
+    def _find_hidden_state(self, ram_idx, find_when_cst=False):
         """
         Find how to update a ram cell at next time step.
         """
         is_constant_at_state, non_cst_rams, non_cst_next_rams \
             = split_constant_variable_rams(self.rams, self.next_rams, ram_idx)
         non_cst_acts = self.actions[~is_constant_at_state]
-        objective = non_cst_next_rams[:, ram_idx]
+
+        if find_when_cst:
+            nc_rams, rams_mapping = remove_constant(self.rams)
+            vnames = [f"ram_{i}" for i in rams_mapping]
+            
+            print(f"\nRegressing when {ram_idx} is constant.")
+            model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and", "mod"])
+            model.fit(nc_rams, is_constant_at_state, variable_names=vnames)
+            best = model.get_best()
+            eq = best['equation']
+            print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
+            if input() != 'y':
+                print(model.equations_)
+                print("Enter the equation index that you would like to keep: [Enter digit]")
+                eq_idx = int(input())
+                eq = model.equations_.loc[eq_idx]['equation']
+            print(f"Storing equation: `{eq}`.")
+            # return eq
 
         nc_rams, rams_mapping = remove_constant(non_cst_rams)
         extended_rams = extend_with_signed_rams(nc_rams)
@@ -190,7 +213,8 @@ class WorldModel():
                          + [f"a{i}" for i in acts_mapping]
 
         print(f"\nRegressing hidden state of ram {ram_idx}.")
-        model = get_model(l1_loss=True, binops=["+", "-", "*", "/"])
+        objective = non_cst_next_rams[:, ram_idx]
+        model = get_model(l1_loss=True, binops=["+", "-", "*", "/", "mod"])
         model.fit(extended_rams_and_acts, objective, variable_names=extended_vnames)
         best = model.get_best()
         eq = best['equation']
@@ -204,24 +228,6 @@ class WorldModel():
         eq = eq.replace('s', "ram_")
         print(f"Storing equation: `{eq}`.")
         return eq
-
-        # nc_rams, rams_mapping = remove_constant(self.rams)
-        # vnames = [f"ram_{i}" for i in rams_mapping]
-
-        # print(f"\nRegressing when {ram_idx} is constant.")
-        # model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and"])
-        # model.fit(nc_rams, is_constant_at_state, variable_names=vnames)
-        # best = model.get_best()
-        # eq = best['equation']
-        # print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
-        # if input() == 'y':
-        #     obj.equations[prop] = eq
-        # else:
-        #     print(model.equations_)
-        #     print("Enter the equation index that you would like to keep: [Enter digit]")
-        #     eq_idx = int(input())
-        #     eq = model.equations_.loc[eq_idx]['equation']
-        # return eq
 
     def find_transitions(self, obj):
         print(f"\nFinding transitions for object {obj.name}.")
