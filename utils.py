@@ -21,9 +21,9 @@ def remove_constant(all_states):
 
 def get_model(l1_loss=True, min_val=None, max_val=None, binops=BINOPS):
     if l1_loss:
-        loss = "loss(prediction, target) = abs(prediction - target)"
+        loss = "L1DistLoss()"
     else:
-        loss = "loss(prediction, target) = (prediction - target)^2"
+        loss = "L2DistLoss()"
 
     un_ops = []
     extra_sympy_mappings = {}

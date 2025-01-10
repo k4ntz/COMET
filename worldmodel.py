@@ -17,7 +17,7 @@ class WorldModel():
         self.oc_env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
         self.objects = []
         self.tracked_objects = {}
-        self.objects_properties = {}
+        # self.objects_properties = {}
 
         # build the slots correspondance
         slots = {}
@@ -29,6 +29,7 @@ class WorldModel():
 
         np.random.seed(0)
         random.seed(0)
+
     
     @property
     def game(self):
@@ -89,15 +90,18 @@ class WorldModel():
                 obj.ws.append(None)
                 obj.hs.append(None)
 
-    def regress(self, rams, objective, vnames, property, obj):
+    def regress(self, rams, objective, vnames, prop, obj_name):
         """
         Perform regression of an object's property on non constant ram states.
         """
+        obj_slot = self.slots[obj_name]
+        obj = self.objects[obj_slot]
         if np.all(objective[:] == objective[0]):
-            print(f"\nProperty {property} of object {obj} found constant with value {objective[0]}.")
-            self.objects_properties[obj + "_" + property] = str(objective[0])
+            print(f"\nProperty {prop} of object {obj_name} found constant with value {objective[0]}.")
+            # self.objects_properties[obj + "_" + prop] = str(objective[0])
+            obj.equations[prop] = str(objective[0])
         else:
-            print(f"\nRegressing property {property} of object {obj}.")
+            print(f"\nRegressing property {prop} of object {obj_name}.")
             min_val = np.min(objective)
             max_val = np.max(objective)
             model = get_model(l1_loss=True, min_val=min_val, max_val=max_val)
@@ -106,46 +110,42 @@ class WorldModel():
             eq = best['equation']
             print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
             if input() == 'y':
-                self.objects_properties[obj + "_" + property] = eq
+                # self.objects_properties[obj_name + "_" + prop] = eq
+                obj.equations[prop] = eq
             else:
                 print(model.equations_)
                 print("Enter the equation index that you would like to keep: [Enter digit]")
-                idx = int(input())
-                eq = model.equations_.loc[idx]['equation']
-                self.objects_properties[obj + "_" + property] = eq
+                eq_idx = int(input())
+                eq = model.equations_.loc[eq_idx]['equation']
+                # self.objects_properties[obj_name + "_" + property] = eq
+                obj.equations[prop] = eq
             print(f"Storing equation: `{eq}`.")
 
-    def find_ram(self, name):
+
+    def find_ram(self, obj):
         """
         Find the properties formulae for the given object.
         Constant ram states are filtered out before running the regression.
         """
-        obj_slot = self.slots[name]
-        obj = self.objects[obj_slot]
-
         visibles = np.array(obj.visibles)
         rams = self.rams[visibles]
-        xs = np.array(obj.xs)[visibles]
-        ys = np.array(obj.ys)[visibles]
-        ws = np.array(obj.ws)[visibles]
-        hs = np.array(obj.hs)[visibles]
         nc_rams, rams_mapping = remove_constant(rams)
         vnames = [f"ram_{i}" for i in rams_mapping]
 
-        self.regress(nc_rams, xs, vnames, "x", name)
-        self.regress(nc_rams, ys, vnames, "y", name)
-        self.regress(nc_rams, ws, vnames, "w", name)
-        self.regress(nc_rams, hs, vnames, "h", name)
+        for prop in obj.properties:
+            if prop != "visible":
+                objectives = np.array(obj.__getattribute__(f"{prop}s"))[visibles]
+                self.regress(nc_rams, objectives, vnames, prop, obj.name)
 
 
-    def find_hidden_state(self, idx):
+    def find_hidden_state(self, ram_idx):
         """
         Find how to update a ram cell at next time step.
         """
         is_constant_at_state, non_cst_rams, non_cst_next_rams \
-            = split_constant_variable_rams(self.rams, self.next_rams, idx)
+            = split_constant_variable_rams(self.rams, self.next_rams, ram_idx)
         non_cst_acts = self.actions[~is_constant_at_state]
-        objective = non_cst_next_rams[:, idx]
+        objective = non_cst_next_rams[:, ram_idx]
 
         nc_rams, rams_mapping = remove_constant(non_cst_rams)
         extended_rams = extend_with_signed_rams(nc_rams)
@@ -154,22 +154,46 @@ class WorldModel():
         extended_vnames = [f"s{i}" for i in rams_mapping] + [f"ss{i}" for i in rams_mapping] \
                          + [f"a{i}" for i in acts_mapping]
 
-        print(f"\nRegressing hidden state of ram {idx}.")
+        print(f"\nRegressing hidden state of ram {ram_idx}.")
         model = get_model(l1_loss=True, binops=["+", "-", "*", "/"])
         model.fit(extended_rams_and_acts, objective, variable_names=extended_vnames)
         best = model.get_best()
         eq = best['equation']
-        print(f"Regression done. Best equation: `{eq}`")
+        print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
+        if input() != 'y':
+            print(model.equations_)
+            print("Enter the equation index that you would like to keep: [Enter digit]")
+            eq_idx = int(input())
+            eq = model.equations_.loc[eq_idx]['equation']
+            # self.objects_properties[obj_name + "_" + property] = eq
+        eq = eq.replace('s', "ram_")
+        print(f"Storing equation: `{eq}`.")
+        return eq
 
-        nc_rams, rams_mapping = remove_constant(self.rams)
-        vnames = [f"ram_{i}" for i in rams_mapping]
+        # nc_rams, rams_mapping = remove_constant(self.rams)
+        # vnames = [f"ram_{i}" for i in rams_mapping]
 
-        print(f"\nRegressing when {idx} is constant.")
-        model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and", "mod"])
-        model.fit(nc_rams, is_constant_at_state, variable_names=vnames)
-        best = model.get_best()
-        eq = best['equation']
-        print(f"Regression done. Best equation: `{eq}`")
+        # print(f"\nRegressing when {ram_idx} is constant.")
+        # model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and"])
+        # model.fit(nc_rams, is_constant_at_state, variable_names=vnames)
+        # best = model.get_best()
+        # eq = best['equation']
+        # print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
+        # if input() == 'y':
+        #     obj.equations[prop] = eq
+        # else:
+        #     print(model.equations_)
+        #     print("Enter the equation index that you would like to keep: [Enter digit]")
+        #     eq_idx = int(input())
+        #     eq = model.equations_.loc[eq_idx]['equation']
+        # return eq
+
+    def find_transitions(self, obj):
+        print(f"\nFinding transitions for object {obj.name}.")
+        print(obj.connected_rams)
+        for ram_idx in obj.connected_rams:
+            eq = self._find_hidden_state(int(ram_idx))
+            obj.equations[f"ram_{ram_idx}"] = eq
 
     def compute_accuracy(self, formulae):
         """
@@ -188,11 +212,6 @@ class WorldModel():
         count_matches = np.sum(eval(formulae))
         print(f"Accuracy of regression: {count_matches / len(self.rams) * 100: .2f}%")
 
-    def find_transitions(self):
-        # finds the transitions that contain the object with the given name
-        for obj in self.objects:
-            pass # find the visibility criterion and the transitions if object is visible 
-
     def show_graph(self):
         # shows the graph of the objects
         pass
@@ -210,3 +229,26 @@ class WorldModel():
         for obj in self.objects: 
             ret += f"\n{obj}"
         return ret
+    
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["game"] = self.oc_env.game_name
+        del state["oc_env"]
+        return state
+    
+    def __setstate__(self, state):
+        game = state.pop("game")
+        self.__dict__.update(state)
+        self.oc_env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
+
+    @property
+    def objects_properties(self):
+        dico = {}
+        for obj in self.objects:
+            for prop in obj.properties:
+                dico[obj.name + "_" + prop] = obj.equations[prop]
+        return dico
+    
+    # @objects_properties.setter
+    # def objects_properties(self, dico):
+    #     pass
