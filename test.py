@@ -14,14 +14,18 @@ if args.from_scratch or not os.path.exists(f"worldmodels/{args.game}.pkl"):
     wm = WorldModel(args.game)
 
     wm.load_transitions()
-    wm.add_object("Player", rgb=(92, 186, 92), miny=30)
-    wm.add_object("Ball", rgb=(236, 236, 236), miny=34, maxy=194)
-    wm.add_object("Enemy", rgb=(213, 130, 74), miny=30)
-
+    if False:
+        wm.add_object("Player", rgb=(92, 186, 92), miny=30)
+        wm.add_object("Ball", rgb=(236, 236, 236), miny=34, maxy=194)
+        wm.add_object("Enemy", rgb=(213, 130, 74), miny=30)
+        for obj in wm.objects:
+            wm.detect_objects(obj)
+    else:
+        wm.load_objects()
+    
     for obj in wm.objects:
-        wm.detect_objects(obj)
         wm.find_ram(obj)
-
+    
     os.makedirs("worldmodels", exist_ok=True)
     pkl.dump(wm, open(f"worldmodels/{args.game}.pkl", "wb"))
     print(f"World model saved in worldmodels/{args.game}.pkl")
