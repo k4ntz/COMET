@@ -11,6 +11,9 @@ COLORS = {
     "white": '#ffffff'
     }
 
+RAM_PATTERN = r'ram\[(\d{1,3})\]'
+ACT_PATTERN = r'act\[(\d{1,3})\]'
+MIN_PATTERN = r'min\[(\d{1,3})\]'
 
 class GameObject():
     instances = {}
@@ -63,8 +66,7 @@ class GameObject():
                                   shape="box", level=1)
                 self.net.add_edge(prop, self.name)
                 if "ram" in self.equations[prop]:
-                    ram_pattern = r'ram\[(\d{1,3})\]'
-                    ram_match = re.search(ram_pattern, self.equations[prop]).group(0)
+                    ram_match = re.search(RAM_PATTERN, self.equations[prop]).group(0)
                     self._add_ram_node(ram_match, prop, 2)
                     rams.append(ram_match)
                 else:
@@ -89,14 +91,12 @@ class GameObject():
             if not isinstance(self.equations[prop], str): # fixing floats
                 self.equations[prop] = str(self.equations[prop])
             if "ram" in self.equations[prop]:
-                ram_pattern = r'ram\[(\d{1,3})\]'
-                ram_match = re.search(ram_pattern, self.equations[prop]).group(0)
+                ram_match = re.search(RAM_PATTERN, self.equations[prop]).group(0)
                 if ram_match != prop: # avoid cycles
                     self._add_ram_node(ram_match, prop, level)
                     # self.net.add_edge(ram_match, prop, label=self.equations[prop])
             if "act" in self.equations[prop]:
-                action_pattern = r'act\[(\d{1,3})\]'
-                action = re.search(action_pattern, self.equations[prop]).group(0)
+                action = re.search(ACT_PATTERN, self.equations[prop]).group(0)
                 self.net.add_node(action, label=action,  
                                     shape="box", color=COLORS["yellow"], level=level)
                 self.net.add_edge(action, prop)
@@ -126,8 +126,7 @@ class GameObject():
         for prop in self.properties:
             if self.equations[prop] is not None:
                 if "ram" in self.equations[prop]:
-                    ram_pattern = r'ram\[(\d{1,3})\]'
-                    ram_idx = re.search(ram_pattern, self.equations[prop]).group(1)
+                    ram_idx = re.search(RAM_PATTERN, self.equations[prop]).group(1)
                     if not ram_idx in rams:
                         rams.append(ram_idx)
         return rams        
