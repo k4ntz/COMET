@@ -63,6 +63,13 @@ class WorldModel():
                     = objs[sample], rams[sample], rams[sample+1], rgbs[sample], \
                         actions[sample], rewards[sample], terms[sample], truncs[sample]
     
+    def unload_transitions(self):
+        """
+        Unload transitions.
+        """
+        self.objs, self.rams, self.next_rams, self.rgbs, \
+            self.actions, self.rewards, self.terms, self.truncs = None, None, None, None, None, None, None, None
+    
     def load_objects(self):
         """
         Load objects from the transitions.
@@ -315,6 +322,7 @@ class WorldModel():
         return ret
     
     def __getstate__(self):
+        self.unload_transitions()
         state = self.__dict__.copy()
         state["game"] = self.oc_env.game_name
         del state["oc_env"]
