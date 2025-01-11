@@ -146,6 +146,7 @@ class WorldModel():
             print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
             if input() == 'y':
                 # self.objects_properties[obj_name + "_" + prop] = eq
+                eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
                 obj.equations[prop] = eq
             else:
                 print(model.equations_)
@@ -153,6 +154,7 @@ class WorldModel():
                 eq_idx = int(input())
                 eq = model.equations_.loc[eq_idx]['equation']
                 # self.objects_properties[obj_name + "_" + property] = eq
+                eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
                 obj.equations[prop] = eq
             print(f"Storing equation: `{eq}`.")
 
@@ -165,7 +167,7 @@ class WorldModel():
         visibles = np.array(obj.visibles)
         rams = self.rams[visibles]
         nc_rams, rams_mapping = remove_constant(rams)
-        vnames = [f"ram[{i}]" for i in rams_mapping]
+        vnames = [f"ram_{i}" for i in rams_mapping]
 
         for prop in obj.properties:
             if prop != "visible":
@@ -188,7 +190,7 @@ class WorldModel():
                 = split_constant_variable_rams(self.rams, self.next_rams, ram_idx)
 
             nc_rams, rams_mapping = remove_constant(self.rams)
-            vnames = [f"ram[{i}]" for i in rams_mapping]
+            vnames = [f"ram_{i}" for i in rams_mapping]
 
             print(f"\nRegressing when {ram_idx} is constant.")
             model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and", "mod"])
@@ -201,6 +203,7 @@ class WorldModel():
                 print("Enter the equation index that you would like to keep: [Enter digit]")
                 eq_idx = int(input())
                 eq = model.equations_.loc[eq_idx]['equation']
+            eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
             print(f"Storing equation: `{eq}`.")
             self.update_conditions[f"ram[{ram_idx}]"] = eq
 
@@ -217,21 +220,22 @@ class WorldModel():
         extended_rams = extend_with_signed_rams(nc_rams)
         nc_acts, acts_mapping = remove_constant(acts)
         extended_rams_and_acts = np.concatenate((extended_rams, nc_acts), axis=1)
-        extended_vnames = [f"ram[{i}]" for i in rams_mapping] + [f"sram[{i}]" for i in rams_mapping] \
-                         + [f"act[{i}]" for i in acts_mapping]
-
+        extended_vnames = [f"ram_{i}" for i in rams_mapping] + [f"sram_{i}" for i in rams_mapping] \
+                         + [f"act_{i}" for i in acts_mapping]
         print(f"\nRegressing hidden state of ram {ram_idx}.")
         objective = next_rams[:, ram_idx]
         model = get_model(l1_loss=True, binops=["+", "-", "*", "/", "mod"])
         model.fit(extended_rams_and_acts, objective, variable_names=extended_vnames)
         best = model.get_best()
         eq = best['equation']
+        eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
         print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
         if input() != 'y':
             print(model.equations_)
             print("Enter the equation index that you would like to keep: [Enter digit]")
             eq_idx = int(input())
             eq = model.equations_.loc[eq_idx]['equation']
+            eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
         print(f"Storing equation: `{eq}`.")
         return eq
 

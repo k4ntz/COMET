@@ -63,7 +63,7 @@ class GameObject():
                                   shape="box", level=1)
                 self.net.add_edge(prop, self.name)
                 if "ram" in self.equations[prop]:
-                    ram_pattern = r'ram[(\d{1,3})]'
+                    ram_pattern = r'ram\[(\d{1,3})\]'
                     ram_match = re.search(ram_pattern, self.equations[prop]).group(0)
                     self._add_ram_node(ram_match, prop, 2)
                     rams.append(ram_match)
@@ -74,7 +74,7 @@ class GameObject():
     def _add_ram_node(self, ram_match, prop, level):
         self.net.add_node(ram_match, label=ram_match, shape='box',
                           color=COLORS["blue"], level=level)
-        self.net.add_edge(ram_match, prop, label=self.equations[prop])
+        self.net.add_edge(ram_match, prop)#, label=self.equations[prop])
     
     def _add_cst_node(self, prop, level):
         self.net.add_node(self.equations[prop], label=f'{self.equations[prop]}', 
@@ -89,19 +89,20 @@ class GameObject():
             if not isinstance(self.equations[prop], str): # fixing floats
                 self.equations[prop] = str(self.equations[prop])
             if "ram" in self.equations[prop]:
-                ram_pattern = r'ram[(\d{1,3})]'
+                ram_pattern = r'ram\[(\d{1,3})\]'
                 ram_match = re.search(ram_pattern, self.equations[prop]).group(0)
                 if ram_match != prop: # avoid cycles
                     self._add_ram_node(ram_match, prop, level)
                     # self.net.add_edge(ram_match, prop, label=self.equations[prop])
-            elif "act" in self.equations[prop]:
-                action = r'act[(\d{1,3})]'
-                self.net.add_node(action, label=f'{self.equations[prop]}',  
+            if "act" in self.equations[prop]:
+                action_pattern = r'act\[(\d{1,3})\]'
+                action = re.search(action_pattern, self.equations[prop]).group(0)
+                self.net.add_node(action, label=action,  
                                     shape="box", color=COLORS["yellow"], level=level)
                 self.net.add_edge(action, prop)
             else:
                 self.net.add_node(self.equations[prop], label=f'{self.equations[prop]}', 
-                color=COLORS["blue"])
+                                  color=COLORS["blue"])
                 self.net.add_edge(self.equations[prop], prop)
         return new_rams
     
@@ -125,7 +126,7 @@ class GameObject():
         for prop in self.properties:
             if self.equations[prop] is not None:
                 if "ram" in self.equations[prop]:
-                    ram_pattern = r'ram_(\d{1,3})'
+                    ram_pattern = r'ram\[(\d{1,3})\]'
                     ram_idx = re.search(ram_pattern, self.equations[prop]).group(1)
                     if not ram_idx in rams:
                         rams.append(ram_idx)
