@@ -16,9 +16,8 @@ ACT_PATTERN = r'act\[(\d{1,3})\]'
 MIN_PATTERN = r'min\[(\d{1,3})\]'
 
 class GameObject():
-    instances = {}
 
-    def __init__(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210):
+    def __init__(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210, has_value=False):
         self.name = name
         self.transitions = []
         self.rgb = rgb
@@ -26,15 +25,11 @@ class GameObject():
         self.maxx = maxx
         self.miny = miny
         self.maxy = maxy
-        if name in self.instances:
-            self.instances[name] += 1
-        else:
-            self.instances[name] = 1
-        self.x, self.y, self.w, self.h = None, None, None, None
+        self.has_value = has_value
         self.xs, self.ys, self.ws, self.hs, \
-            self.visibles = [], [], [], [], []
+            self.visibles, self.values = [], [], [], [], [], []
         
-        self.properties = ["x", "y", "w", "h", "visible"]
+        self.properties = ["x", "y", "w", "h", "visible", "value"]
         self.equations = {prop: None for prop in self.properties}
 
     def __repr__(self):

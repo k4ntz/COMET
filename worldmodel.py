@@ -7,7 +7,7 @@ import re
 
 from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
-from ocatari.ram.game_objects import NoObject
+from ocatari.ram.game_objects import NoObject, ValueObject
 
 from gameobject import GameObject
 from utils import remove_constant, get_model, split_constant_variable_rams, extend_with_signed_rams, replace_vnames
@@ -69,20 +69,23 @@ class WorldModel():
         """
         objects = []
         for obj_name, slot_idx in self.slots.items():
-            rgb = self.objs[0][slot_idx].rgb
-            obj = GameObject(obj_name, rgb)
-            objects.append(obj)
+            obj = self.objs[0][slot_idx]
+            hv = type(obj) == ValueObject
+            objects.append(GameObject(obj_name, obj.rgb, has_value=hv))
 
         for i, state in enumerate(self.objs):
             for j, obj in enumerate(objects):
-                if type(state[j]) is NoObject:
+                o = state[j]
+                if type(o) is NoObject:
                     obj.visibles.append(False)
                     obj.xs.append(None)
                     obj.ys.append(None)
                     obj.ws.append(None)
                     obj.hs.append(None)
+                elif obj.has_value:
+                    obj.values.append(o.value)
                 else:
-                    x, y, w, h = state[j].xywh
+                    x, y, w, h = o.xywh
                     obj.visibles.append(True)
                     obj.xs.append(x)
                     obj.ys.append(y)
@@ -168,10 +171,14 @@ class WorldModel():
         nc_rams, rams_mapping = remove_constant(rams)
         vnames = [f"ram_{i}" for i in rams_mapping]
 
-        for prop in obj.properties:
-            if prop != "visible":
-                objectives = np.array(obj.__getattribute__(f"{prop}s"))[visibles]
-                self.regress(nc_rams, objectives, vnames, prop, obj.name)
+        if obj.has_value:
+            objectives = np.array(obj.__getattribute__(f"values"))
+            self.regress(nc_rams, objectives, vnames, prop, obj.name)
+        else:
+            for prop in obj.properties:
+                if prop != "visible" and prop != "value":
+                    objectives = np.array(obj.__getattribute__(f"{prop}s"))[visibles]
+                    self.regress(nc_rams, objectives, vnames, prop, obj.name)
 
     def find_connected_rams(self):
         """
