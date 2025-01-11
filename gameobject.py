@@ -46,7 +46,7 @@ class GameObject():
         # self.net.show_buttons(filter_=['physics'])
         self.net.add_node(self.name, label=f'{self.name}', color=COLORS["red"], level = 0)
         # Configure the hierarchical layout
-        self.set_net_options()
+        # self.set_net_options()
         rams = self.draw_properties()
         level = 3
         while rams:
@@ -84,7 +84,7 @@ class GameObject():
                 
     def draw_connected_rams(self, rams, level):
         new_rams = []
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         for prop in rams:
             if not isinstance(self.equations[prop], str): # fixing floats
                 self.equations[prop] = str(self.equations[prop])

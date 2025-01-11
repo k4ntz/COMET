@@ -14,6 +14,7 @@ from tqdm import tqdm
 import os
 import pickle as pkl
 from copy import deepcopy
+from time import sleep
 
 parser = ArgumentParser()
 parser.add_argument("-g", "--game", type=str, default="Pong")
@@ -56,6 +57,7 @@ class Renderer:
                     self.env.reset()
                 self.frame += 1
                 self.pbar.update(1)
+                sleep(0.01)
                 if self.frame % self.total_frames == 0:
                     self.save_transitions()
         pygame.quit()
@@ -66,6 +68,8 @@ class Renderer:
         pressed_keys = tuple(pressed_keys)
         if pressed_keys in self.keys2actions.keys():
             action = self.keys2actions[pressed_keys]
+            if isinstance(action, int):
+                return action
             return self.env.get_action_meanings().index(action.name)
         else:
             return 0  # NOOP

@@ -36,8 +36,8 @@ else:
 #     wm.find_transitions(obj)
 
 # pkl.dump(wm, open(f"worldmodels/{args.game}.pkl", "wb"))
-
-for obj in wm.objects:
+import ipdb; ipdb.set_trace()
+for obj in wm.objects[6:7]:
     obj.make_graph()
     #
 
