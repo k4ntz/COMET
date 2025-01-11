@@ -17,19 +17,23 @@ MIN_PATTERN = r'min\[(\d{1,3})\]'
 
 class GameObject():
 
-    def __init__(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210, has_value=False):
+    def __init__(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210, value_object=False):
         self.name = name
-        self.transitions = []
         self.rgb = rgb
         self.minx = minx
         self.maxx = maxx
         self.miny = miny
         self.maxy = maxy
-        self.has_value = has_value
-        self.xs, self.ys, self.ws, self.hs, \
-            self.visibles, self.values = [], [], [], [], [], []
+        self.value_object = value_object
+
+        if value_object:
+            self.visibles, self.values = [], []
+            self.properties = ["visible", "value"]
+        else:
+            self.xs, self.ys, self.ws, self.hs, \
+                self.visibles = [], [], [], [], []
+            self.properties = ["x", "y", "w", "h", "visible"]
         
-        self.properties = ["x", "y", "w", "h", "visible", "value"]
         self.equations = {prop: None for prop in self.properties}
 
     def __repr__(self):
@@ -38,6 +42,12 @@ class GameObject():
             if self.equations[prop] is not None:
                 string += f"\n\t{prop}: {self.equations[prop]}"
         return string
+
+    def update_bounds(self, minx=0, maxx=160, miny=0, maxy=210):
+        self.minx = minx
+        self.maxx = maxx
+        self.miny = miny
+        self.maxy = maxy
 
     def make_graph(self):
         self.net = Network(notebook=True, directed=True)
