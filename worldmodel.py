@@ -16,9 +16,8 @@ warnings.filterwarnings("ignore")
 
 class WorldModel():
     def __init__(self, game):
-        self.oc_env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
-        self.objects = []
-        self.update_conditions = {}
+        env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
+        self.oc_env = env
 
         # build the slots correspondance
         slots = {}
@@ -33,6 +32,14 @@ class WorldModel():
                     slots[slot_name] = k
                     k+=1
         self.slots = slots
+        objects = []
+        for obj_name, slot_idx in self.slots.items():
+            obj = env._slots[slot_idx]
+            hv = issubclass(type(obj), ValueObject)
+            objects.append(GameObject(obj_name, obj.rgb, value_object=hv))
+        self.objects = objects
+
+        self.update_conditions = {}
 
         np.random.seed(0)
         random.seed(0)
@@ -74,38 +81,36 @@ class WorldModel():
         """
         Load objects from the transitions.
         """
-        objects = []
-        for obj_name, slot_idx in self.slots.items():
-            obj = self.objs[0][slot_idx]
-            hv = type(obj) == ValueObject
-            objects.append(GameObject(obj_name, obj.rgb, has_value=hv))
-
         for i, state in enumerate(self.objs):
-            for j, obj in enumerate(objects):
-                o = state[j]
-                if type(o) is NoObject:
-                    obj.visibles.append(False)
-                    obj.xs.append(None)
-                    obj.ys.append(None)
-                    obj.ws.append(None)
-                    obj.hs.append(None)
-                elif obj.has_value:
-                    obj.values.append(o.value)
-                else:
-                    x, y, w, h = o.xywh
-                    obj.visibles.append(True)
-                    obj.xs.append(x)
-                    obj.ys.append(y)
-                    obj.ws.append(w)
-                    obj.hs.append(h)
-        self.objects = objects
+            for j, obj in enumerate(self.objects):
+                obs_obj = state[j]
+                visible = bool(obs_obj)
+                obj.visibles.append(visible)
+                if visible:
+                    if obj.value_object:
+                        obj.values.append(obs_obj.value)
+                    else:
+                        x, y, w, h = obs_obj.xywh
+                        obj.xs.append(x)
+                        obj.ys.append(y)
+                        obj.ws.append(w)
+                        obj.hs.append(h)
+                else:   
+                    if obj.value_object:
+                        obj.values.append(None)
+                    else:
+                        obj.xs.append(None)
+                        obj.ys.append(None)
+                        obj.ws.append(None)
+                        obj.hs.append(None)
 
 
-    def add_object(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210):
+    def update_object_bounds(self, name, minx=0, maxx=160, miny=0, maxy=210):
         """
-        Add an object to the world model.
+        Update bounds for vision search in image.
         """
-        self.objects.append(GameObject(name, rgb, minx, maxx, miny, maxy))
+        obj_idx = self.slots[name]
+        self.objects[obj_idx].update_bounds(minx, maxx, miny, maxy)
 
     def detect_objects(self, obj):
         """
@@ -135,18 +140,16 @@ class WorldModel():
                 obj.ws.append(None)
                 obj.hs.append(None)
 
-    def regress(self, rams, objective, vnames, prop, obj_name):
+    def regress(self, rams, objective, vnames, prop, obj):
         """
         Perform regression of an object's property on non constant ram states.
         """
-        obj_slot = self.slots[obj_name]
-        obj = self.objects[obj_slot]
         if np.all(objective[:] == objective[0]):
-            print(f"\nProperty {prop} of object {obj_name} found constant with value {objective[0]}.")
+            print(f"\nProperty {prop} of object {obj.name} found constant with value {objective[0]}.")
             # self.objects_properties[obj + "_" + prop] = str(objective[0])
             obj.equations[prop] = str(objective[0])
         else:
-            print(f"\nRegressing property {prop} of object {obj_name}.")
+            print(f"\nRegressing property {prop} of object {obj.name}.")
             min_val = np.min(objective)
             max_val = np.max(objective)
             model = get_model(l1_loss=True, min_val=min_val, max_val=max_val)
@@ -178,14 +181,11 @@ class WorldModel():
         nc_rams, rams_mapping = remove_constant(rams)
         vnames = [f"ram_{i}" for i in rams_mapping]
 
-        if obj.has_value:
-            objectives = np.array(obj.__getattribute__(f"values"))
-            self.regress(nc_rams, objectives, vnames, prop, obj.name)
-        else:
-            for prop in obj.properties:
-                if prop != "visible" and prop != "value":
-                    objectives = np.array(obj.__getattribute__(f"{prop}s"))[visibles]
-                    self.regress(nc_rams, objectives, vnames, prop, obj.name)
+        for prop in obj.properties:
+            if prop != "visible":
+                objectives = np.array(obj.__getattribute__(f"{prop}s"))[visibles]
+                self.regress(nc_rams, objectives, vnames, prop, obj)
+
 
     def find_connected_rams(self):
         """
