@@ -7,10 +7,10 @@ import re
 
 from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
-from ocatari.ram.game_objects import NoObject
+from ocatari.ram.game_objects import NoObject, ValueObject
 
 from gameobject import GameObject
-from utils import remove_constant, get_model, split_constant_variable_rams, extend_with_signed_rams
+from utils import remove_constant, get_model, split_constant_variable_rams, extend_with_signed_rams, replace_vnames
 
 warnings.filterwarnings("ignore")
 
@@ -69,20 +69,23 @@ class WorldModel():
         """
         objects = []
         for obj_name, slot_idx in self.slots.items():
-            rgb = self.objs[0][slot_idx].rgb
-            obj = GameObject(obj_name, rgb)
-            objects.append(obj)
+            obj = self.objs[0][slot_idx]
+            hv = type(obj) == ValueObject
+            objects.append(GameObject(obj_name, obj.rgb, has_value=hv))
 
         for i, state in enumerate(self.objs):
             for j, obj in enumerate(objects):
-                if type(state[j]) is NoObject:
+                o = state[j]
+                if type(o) is NoObject:
                     obj.visibles.append(False)
                     obj.xs.append(None)
                     obj.ys.append(None)
                     obj.ws.append(None)
                     obj.hs.append(None)
+                elif obj.has_value:
+                    obj.values.append(o.value)
                 else:
-                    x, y, w, h = state[j].xywh
+                    x, y, w, h = o.xywh
                     obj.visibles.append(True)
                     obj.xs.append(x)
                     obj.ys.append(y)
@@ -146,15 +149,14 @@ class WorldModel():
             print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
             if input() == 'y':
                 # self.objects_properties[obj_name + "_" + prop] = eq
-                eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
+                eq = replace_vnames(eq)
                 obj.equations[prop] = eq
             else:
                 print(model.equations_)
                 print("Enter the equation index that you would like to keep: [Enter digit]")
                 eq_idx = int(input())
                 eq = model.equations_.loc[eq_idx]['equation']
-                # self.objects_properties[obj_name + "_" + property] = eq
-                eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
+                eq = replace_vnames(eq)
                 obj.equations[prop] = eq
             print(f"Storing equation: `{eq}`.")
 
@@ -169,10 +171,14 @@ class WorldModel():
         nc_rams, rams_mapping = remove_constant(rams)
         vnames = [f"ram_{i}" for i in rams_mapping]
 
-        for prop in obj.properties:
-            if prop != "visible":
-                objectives = np.array(obj.__getattribute__(f"{prop}s"))[visibles]
-                self.regress(nc_rams, objectives, vnames, prop, obj.name)
+        if obj.has_value:
+            objectives = np.array(obj.__getattribute__(f"values"))
+            self.regress(nc_rams, objectives, vnames, prop, obj.name)
+        else:
+            for prop in obj.properties:
+                if prop != "visible" and prop != "value":
+                    objectives = np.array(obj.__getattribute__(f"{prop}s"))[visibles]
+                    self.regress(nc_rams, objectives, vnames, prop, obj.name)
 
     def find_connected_rams(self):
         """
@@ -203,7 +209,7 @@ class WorldModel():
                 print("Enter the equation index that you would like to keep: [Enter digit]")
                 eq_idx = int(input())
                 eq = model.equations_.loc[eq_idx]['equation']
-            eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
+            eq = replace_vnames(eq)
             print(f"Storing equation: `{eq}`.")
             self.update_conditions[f"ram[{ram_idx}]"] = eq
 
@@ -228,22 +234,27 @@ class WorldModel():
         model.fit(extended_rams_and_acts, objective, variable_names=extended_vnames)
         best = model.get_best()
         eq = best['equation']
-        eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
+        eq = replace_vnames(eq)
         print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
         if input() != 'y':
             print(model.equations_)
             print("Enter the equation index that you would like to keep: [Enter digit]")
             eq_idx = int(input())
             eq = model.equations_.loc[eq_idx]['equation']
-            eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
-        print(f"Storing equation: `{eq}`.")
+            eq = replace_vnames(eq)
         return eq
 
     def find_transitions(self, obj):
         print(f"\nFinding transitions for object {obj.name}.")
         print(obj.connected_rams)
         for ram_idx in obj.connected_rams:
-            eq = self._find_hidden_state(int(ram_idx))
+            eq = self._find_hidden_state(int(ram_idx), separate_on_cst=False)
+            _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq)
+            print("Do you want to run another regression only on updated rams? [y/n]")
+            if input() == 'y':
+                eq = self._find_hidden_state(int(ram_idx), separate_on_cst=True)
+                _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq)
+            print(f"Storing equation: `{eq}`.")
             obj.equations[f"ram[{ram_idx}]"] = eq
 
     def compute_accuracy(self, formulae, separate_on_cst=False):
@@ -256,9 +267,9 @@ class WorldModel():
         """
         formulae = formulae.replace("mod", "np.mod")
         formulae = formulae.replace("greater", "np.greater")
-        formulae = formulae.replace("equal", "np.equal")
         formulae = formulae.replace("square", "np.square")
         formulae = formulae.replace("neg", "np.negative")
+        formulae = formulae.replace("min", "np.minimum")
         formulae = formulae.replace("max", "np.maximum")
         # do not delete unused variables in the following,
         # they are used in the formulae evaluation
@@ -268,7 +279,6 @@ class WorldModel():
             if match:
                 to_track = int(match.group(1))
                 is_cst, ram, nram = split_constant_variable_rams(self.rams, self.next_rams, to_track)
-                # import ipdb; ipdb.set_trace()
                 n = len(ram)
                 ram, nram = ram.T, nram.T
                 sram, snram = ram.astype(np.int8), nram.astype(np.int8)

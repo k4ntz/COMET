@@ -2,6 +2,7 @@ import numpy as np
 from pysr import PySRRegressor
 from copy import deepcopy
 import sympy
+import re
 
 BINOPS = ["+", "-", "max", "min"]
 
@@ -67,3 +68,9 @@ def extend_with_signed_rams(rams):
         signed_ram = ram.astype(np.int8)
         extended_rams[i, ncells:] = signed_ram
     return extended_rams
+
+def replace_vnames(eq):
+    eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
+    eq = re.sub(r'min\[(\d{1,3})\]\(', r'min(\1, ', eq)
+    eq = re.sub(r'max\[(\d{1,3})\]\(', r'max(\1, ', eq)
+    return eq
