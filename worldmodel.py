@@ -10,7 +10,7 @@ from ocatari.vision.utils import find_objects
 from ocatari.ram.game_objects import NoObject, ValueObject
 
 from gameobject import GameObject
-from utils import remove_constant, get_model, split_constant_variable_rams, extend_with_signed_rams, replace_vnames
+from utils import remove_constant, get_model, split_updated_rams, extend_with_signed_rams, replace_vnames
 
 warnings.filterwarnings("ignore")
 
@@ -194,20 +194,20 @@ class WorldModel():
         for obj in self.objects:
             self._find_ram(obj)
 
-    def _find_hidden_state(self, ram_idx, separate_on_cst=False):
+    def _find_hidden_state(self, ram_idx, separate_on_upd=False):
         """
         Find how to update a ram cell at next time step.
         """
-        if separate_on_cst:
-            is_constant_at_state, non_cst_rams, non_cst_next_rams \
-                = split_constant_variable_rams(self.rams, self.next_rams, ram_idx)
+        if separate_on_upd:
+            is_upd_at_state, non_cst_rams, non_cst_next_rams \
+                = split_updated_rams(self.rams, self.next_rams, ram_idx)
 
             nc_rams, rams_mapping = remove_constant(self.rams)
             vnames = [f"ram_{i}" for i in rams_mapping]
 
-            print(f"\nRegressing when {ram_idx} is constant.")
+            print(f"\nRegressing when {ram_idx} is updated.")
             model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and", "mod"])
-            model.fit(nc_rams, is_constant_at_state, variable_names=vnames)
+            model.fit(nc_rams, is_upd_at_state, variable_names=vnames)
             best = model.get_best()
             eq = best['equation']
             print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
@@ -221,7 +221,7 @@ class WorldModel():
             self.update_conditions[f"ram[{ram_idx}]"] = eq
 
             rams = non_cst_rams
-            acts = self.actions[~is_constant_at_state]
+            acts = self.actions[is_upd_at_state]
             next_rams = non_cst_next_rams
 
         else:
@@ -255,22 +255,22 @@ class WorldModel():
         print(f"\nFinding transitions for object {obj.name}.")
         print(obj.connected_rams)
         for ram_idx in obj.connected_rams:
-            eq = self._find_hidden_state(int(ram_idx), separate_on_cst=False)
+            eq = self._find_hidden_state(int(ram_idx), separate_on_upd=False)
             _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq)
             print("Do you want to run another regression only on updated rams? [y/n]")
             if input() == 'y':
-                eq = self._find_hidden_state(int(ram_idx), separate_on_cst=True)
-                _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq)
+                eq = self._find_hidden_state(int(ram_idx), separate_on_upd=True)
+                _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq, separate_on_upd=True)
             print(f"Storing equation: `{eq}`.")
             obj.equations[f"ram[{ram_idx}]"] = eq
 
-    def compute_accuracy(self, formulae, separate_on_cst=False):
+    def compute_accuracy(self, formulae, separate_on_upd=False):
         """
         Compute accuracy of formulae, e.g.
         `nram[49] == ram[49] - sram[58]`
         `nram[14] == ram[14] + act[1]`
 
-        If option separate_on_cst is on, accuracy is computed only on updated rams.
+        If option separate_on_upd is on, accuracy is computed only on updated rams.
         """
         formulae = formulae.replace("mod", "np.mod")
         formulae = formulae.replace("greater", "np.greater")
@@ -280,16 +280,16 @@ class WorldModel():
         formulae = formulae.replace("max", "np.maximum")
         # do not delete unused variables in the following,
         # they are used in the formulae evaluation
-        if separate_on_cst:
+        if separate_on_upd:
             pattern = r'nram\[(\d{1,3})\]'
             match = re.search(pattern, formulae)
             if match:
                 to_track = int(match.group(1))
-                is_cst, ram, nram = split_constant_variable_rams(self.rams, self.next_rams, to_track)
+                is_upd, ram, nram = split_updated_rams(self.rams, self.next_rams, to_track)
                 n = len(ram)
                 ram, nram = ram.T, nram.T
                 sram, snram = ram.astype(np.int8), nram.astype(np.int8)
-                act = self.actions[~is_cst].T
+                act = self.actions[is_upd].T
             else:
                 print("No ram index found in formulae")
                 return
