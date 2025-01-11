@@ -44,7 +44,7 @@ class GameObject():
         # self.net.show_buttons(filter_=['physics'])
         self.net.add_node(self.name, label=f'{self.name}', color=COLORS["red"], level = 0)
         # Configure the hierarchical layout
-        # self.set_net_options()
+        self.set_net_options()
         rams = self.draw_properties()
         level = 3
         while rams:
@@ -71,7 +71,7 @@ class GameObject():
     def _add_ram_node(self, ram_match, prop, level):
         self.net.add_node(ram_match, label=ram_match, shape='box',
                           color=COLORS["blue"], level=level)
-        self.net.add_edge(ram_match, prop)#, label=self.equations[prop])
+        self.net.add_edge(ram_match, prop, title=self.equations[prop])
     
     def _add_cst_node(self, prop, level):
         self.net.add_node(self.equations[prop], label=f'{self.equations[prop]}', 
@@ -89,12 +89,11 @@ class GameObject():
                 ram_match = re.search(RAM_PATTERN, self.equations[prop]).group(0)
                 if ram_match != prop: # avoid cycles
                     self._add_ram_node(ram_match, prop, level)
-                    # self.net.add_edge(ram_match, prop, label=self.equations[prop])
             if "act" in self.equations[prop]:
                 action = re.search(ACT_PATTERN, self.equations[prop]).group(0)
                 self.net.add_node(action, label=action,  
                                     shape="box", color=COLORS["yellow"], level=level)
-                self.net.add_edge(action, prop)
+                self.net.add_edge(action, prop, title=self.equations[prop])
             else:
                 self.net.add_node(self.equations[prop], label=f'{self.equations[prop]}', 
                                   color=COLORS["blue"])
