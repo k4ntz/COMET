@@ -67,14 +67,14 @@ def get_model(l1_loss=True, min_val=None, max_val=None, mod_max=None,
         temp_equation_file=True,  # Don't write final or intermediate CSVs
     )
 
-def extend_with_signed_rams(rams):
-    nstates, ncells = rams.shape
-    extended_rams = np.zeros((nstates, 2 * ncells), dtype=int)
-    extended_rams[:, :ncells] = rams
-    for i, ram in enumerate(rams):
-        signed_ram = ram.astype(np.int8)
-        extended_rams[i, ncells:] = signed_ram
-    return extended_rams
+# def extend_with_signed_rams(rams):
+#     nstates, ncells = rams.shape
+#     extended_rams = np.zeros((nstates, 2 * ncells), dtype=int)
+#     extended_rams[:, :ncells] = rams
+#     for i, ram in enumerate(rams):
+#         signed_ram = ram.astype(np.int8)
+#         extended_rams[i, ncells:] = signed_ram
+#     return extended_rams
 
 def replace_vnames(eq):
     try:
@@ -112,12 +112,10 @@ def encode_image_to_base64(image_path):
         return f"data:{mime_type};base64,{encoded_string}"
 
     
-def eq_name(ram_idx, next, signed):
+def eq_name(ram_idx, next):
     eqname = f"ram[{ram_idx}]"
     if next:
         eqname = 'n' + eqname
-    if signed:
-        eqname = 's' + eqname
     return eqname
 
 

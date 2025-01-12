@@ -13,8 +13,7 @@ from ocatari.ram.game_objects import NoObject, ValueObject
 
 from gameobject import GameObject
 from utils import remove_constant_and_equivalent, get_model, \
-                  extend_with_signed_rams, replace_vnames, eq_name, \
-                  SRAM_RAM_PATTERN
+                  replace_vnames, eq_name, RAM_PATTERN
 
 warnings.filterwarnings("ignore")
 
@@ -73,7 +72,6 @@ class WorldModel():
                 self.actions, self.rewards, self.terms, self.truncs \
                     = objs[sample], rams[sample], rams[sample+1], rgbs[sample], \
                         actions[sample], rewards[sample], terms[sample], truncs[sample]
-            
         self.rams_mapping, self.equivalents = remove_constant_and_equivalent(self.rams)
         self.acts_mapping, _ = remove_constant_and_equivalent(self.actions)
         
@@ -161,7 +159,7 @@ class WorldModel():
 
     def _split_updated_rams(self, to_track):
         nstates, _ = self.rams.shape
-        is_updated_at_state = np.zeros(nstates)
+        is_updated_at_state = np.zeros(nstates, dtype=np.int16)
         for i, (state, next_state) in enumerate(zip(self.rams, self.next_rams)):
             if state[to_track] != next_state[to_track]:
                 is_updated_at_state[i] = 1
@@ -220,13 +218,11 @@ class WorldModel():
         for obj in self.objects:
             self._find_ram(obj)
 
-    def _find_hidden_state(self, ram_idx, separate_on_upd=False, signed=False):
+    def _find_hidden_state(self, ram_idx, separate_on_upd=False):
         """
         Find how to update a ram cell at next time step.
         """
         objective = self.next_rams[:, ram_idx]
-        if signed:
-            objective = objective.astype(np.int8)
         max_val = np.max(objective) + 1
 
         if separate_on_upd:
@@ -257,10 +253,9 @@ class WorldModel():
             rams = self.clean_rams
             acts = self.clean_actions
 
-        extended_rams = extend_with_signed_rams(rams)
-        extended_rams_and_acts = np.concatenate((extended_rams, acts), axis=1)
+        # recomputing for the updated only
+        extended_rams_and_acts = np.concatenate((rams, acts), axis=1)
         extended_vnames = [f"ram_{i}" for i in self.rams_mapping] \
-                        + [f"sram_{i}" for i in self.rams_mapping] \
                         + [f"act_{i}" for i in self.acts_mapping]
         print(f"\nRegressing hidden state of ram {ram_idx}.")
         model = get_model(l1_loss=True, mod_max=max_val, binops=["+", "-", "*", "mod"])
@@ -281,32 +276,26 @@ class WorldModel():
         print(f"\nFinding transitions for object {obj.name}.")
         connected_rams = obj.connected_rams
         print(f"Connected rams: {connected_rams}")
-        signeds = [False for _ in connected_rams]
         while connected_rams:
             ram_idx = int(connected_rams.pop(0))
-            signed = signeds.pop(0)
-            eqname = eq_name(ram_idx, next=False, signed=signed)
+            eqname = eq_name(ram_idx, next=False)
             if eqname in self.ram_equations:
                 print(f"Ram {ram_idx} already covered.")
             else:
-                eq = self._find_hidden_state(ram_idx, separate_on_upd=False, signed=signed)
-                neqname = eq_name(ram_idx, next=True, signed=signed)
+                eq = self._find_hidden_state(ram_idx, separate_on_upd=False)
+                neqname = eq_name(ram_idx, next=True)
                 _ = self.compute_accuracy(neqname + " == " + eq)
                 print("Do you want to run another regression only on updated rams? [y/n]")
                 if input() == 'y':
-                    eq = self._find_hidden_state(ram_idx, separate_on_upd=True, signed=True)
+                    eq = self._find_hidden_state(ram_idx, separate_on_upd=True)
                     _ = self.compute_accuracy(neqname + " == " + eq, separate_on_upd=True)
                 print(f"Storing equation: `{eq}`.")
                 self.ram_equations[eqname] = eq
 
-                connected_next = re.findall(SRAM_RAM_PATTERN, eq)
+                connected_next = re.findall(RAM_PATTERN, eq)
                 for rams in connected_next:
                     prefix, nb = rams
                     connected_rams.append(nb)
-                    if prefix == "ram":
-                        signeds.append(False)
-                    elif prefix == "sram":
-                        signeds.append(True)
 
     def find_all_transitions(self):
         for obj in self.objects:
@@ -345,15 +334,16 @@ class WorldModel():
                 to_track = int(match.group(1))
                 is_upd = self._split_updated_rams(to_track)
                 ram, nram = self.rams[is_upd].T, self.next_rams[is_upd].T
-                sram, snram = ram.astype(np.int8), nram.astype(np.int8)
+                # sram, snram = ram.astype(np.int8), nram.astype(np.int8)
                 act = self.actions[is_upd].T
                 n = len(ram.T)
             else:
                 print("No ram index found in formulae")
                 return
         else:
-            snram, nram = self.next_rams.astype(np.int8).T, self.next_rams.T
-            sram, ram  = self.rams.astype(np.int8).T, self.rams.T
+            # sram, ram  = self.rams.astype(np.int8).T, self.rams.T
+            nram = self.next_rams.T
+            ram  = self.rams.T
             act = self.actions.T
             n = len(self.rams)
         count_matches = np.sum(eval(formulae))
@@ -445,5 +435,13 @@ class WorldModel():
                     rams[:, i] = [x - 256 if x > 127 else x for x in rams[:, i]]
                     print(uniq_val, " -> ", np.unique(rams[:, i]))
         else:
-            print(f"Hexa values already converted, using already stored: {self._hexa_converted}.")
+            if self._hexa_converted:
+                print(f"Hexa values already converted, using already stored: {self._hexa_converted}.")
+                for i in self._hexa_converted:
+                    rams[:, i] = [int(format(x, 'x')) for x in rams[:, i]]
+            if self._signed_converted:
+                rams = rams.astype(np.int16)
+                print(f"Signed values already converted, using already stored: {self._signed_converted}.")
+                for i in self._signed_converted:
+                    rams[:, i] = [x - 256 if x > 127 else x for x in rams[:, i]]
         return rams
