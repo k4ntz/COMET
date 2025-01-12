@@ -31,8 +31,7 @@ if args.from_scratch or not os.path.exists(f"worldmodels/{args.game}.pkl"):
 
 else:
     wm = pkl.load(open(f"worldmodels/{args.game}.pkl", "rb"))
-    
-wm.load_transitions()
+    wm.load_transitions()
 
 for obj in wm.objects:
     wm.find_transitions(obj)
