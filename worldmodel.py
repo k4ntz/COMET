@@ -2,8 +2,10 @@ import random
 import warnings
 import pickle as pkl
 import numpy as np
-import pandas
 import re
+import os
+from pyvis.network import Network
+from PIL import Image
 
 from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
@@ -16,6 +18,7 @@ warnings.filterwarnings("ignore")
 
 class WorldModel():
     def __init__(self, game):
+        self.game_name = game
         env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
         self.oc_env = env
 
@@ -35,19 +38,22 @@ class WorldModel():
         objects = []
         for obj_name, slot_idx in self.slots.items():
             obj = env._slots[slot_idx]
-            hv = issubclass(type(obj), ValueObject)
+            hv = isinstance(obj, ValueObject)
             objects.append(GameObject(obj_name, obj.rgb, value_object=hv))
         self.objects = objects
 
         self.update_conditions = {}
 
+        self._background_rgb = None
+        self._patches_done = False
+
         np.random.seed(0)
         random.seed(0)
+        
 
-    
     @property
     def game(self):
-        return self.oc_env.game_name
+        return self.game_name
 
     def load_transitions(self, sample_k=None):
         """
@@ -69,6 +75,11 @@ class WorldModel():
                 self.actions, self.rewards, self.terms, self.truncs \
                     = objs[sample], rams[sample], rams[sample+1], rgbs[sample], \
                         actions[sample], rewards[sample], terms[sample], truncs[sample]
+        
+        if not self._background_rgb:
+            self._get_background_color()
+        if not self._patches_done:
+            self._get_objects_patches()
     
     def unload_transitions(self):
         """
@@ -132,7 +143,6 @@ class WorldModel():
                 obj.ws.append(w)
                 obj.hs.append(h)
             else:
-                # import ipdb; ipdb.set_trace()
                 # raise ValueError("More than one object detected.")
                 obj.visibles.append(False)
                 obj.xs.append(None)
@@ -260,9 +270,27 @@ class WorldModel():
             print("Do you want to run another regression only on updated rams? [y/n]")
             if input() == 'y':
                 eq = self._find_hidden_state(int(ram_idx), separate_on_cst=True)
-                _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq)
+                _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq, separate_on_cst=True)
             print(f"Storing equation: `{eq}`.")
             obj.equations[f"ram[{ram_idx}]"] = eq
+    
+    @property
+    def ram_equations(self):
+        dico = {}
+        for obj in self.objects:
+            for prop, eq in obj.equations.items():
+                if "ram" in prop and prop not in dico:
+                    dico[prop] = eq
+    
+    def make_graph(self):
+        network = Network(notebook=True, directed=True, heading=self.game_name, 
+                          bgcolor=f"rgb{self._background_rgb}", height="800px")
+        for obj in self.objects:
+            obj.make_graph(network)
+        self.net = network
+        self.net.show(f'graphs/{self.game}.html')
+        print(f"Graph saved in graphs/{self.game}.html")
+
 
     def compute_accuracy(self, formulae, separate_on_cst=False):
         """
@@ -324,7 +352,7 @@ class WorldModel():
     def __getstate__(self):
         self.unload_transitions()
         state = self.__dict__.copy()
-        state["game"] = self.oc_env.game_name
+        state["game"] = self.game_name
         del state["oc_env"]
         return state
     
@@ -340,7 +368,40 @@ class WorldModel():
             for prop in obj.properties:
                 dico[obj.name + "_" + prop] = obj.equations[prop]
         return dico
+
     
-    # @objects_properties.setter
-    # def objects_properties(self, dico):
-    #     pass
+    def _get_background_color(self):
+        """
+        Get the background of the game.
+        """
+        print("Finding background color.")
+        idxs = np.random.randint(len(self.rgbs), size=100)
+        flattened = self.rgbs[idxs].reshape(-1, 3)
+
+        # Find all unique colors and their counts
+        unique_colors, counts = np.unique(flattened, axis=0, return_counts=True)
+
+        # Pick the color with the highest count
+        most_common_color = unique_colors[counts.argmax()]
+
+        # Return as a tuple (e.g., (255, 0, 0))
+        self._background_rgb = tuple(most_common_color)
+        print(f"Background color found: {self._background_rgb}")
+
+    
+    def _get_objects_patches(self):
+        self._patches_done = True
+        os.makedirs(f"patches/{self.game_name}", exist_ok=True)
+        for i, obj in enumerate(self.objects):
+            while True:
+                t = random.randint(0, len(self.rgbs)-1)
+                if self.objs[t][i].visible:
+                    x, y, w, h = self.objs[t][i].xywh
+                    patch = self.rgbs[t][y:y + h, x:x + w, :]
+                    obj._patchsize = max(w, h)
+                    obj._patchpath = f"patches/{self.game_name}/{obj.name}.png"
+                    image = Image.fromarray(patch)
+                    image.save(obj._patchpath, 
+                               format="PNG", compress_level=0)
+                    print(f"Patch for object {obj.name} saved in patches/{self.game_name}/{obj.name}.png")
+                    break
