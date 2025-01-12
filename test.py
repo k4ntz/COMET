@@ -31,16 +31,21 @@ if args.from_scratch or not os.path.exists(f"worldmodels/{args.game}.pkl"):
 
 else:
     wm = pkl.load(open(f"worldmodels/{args.game}.pkl", "rb"))
-    wm.load_transitions()
+    # wm.load_transitions()
+    # wm._get_objects_patches()
+    # pkl.dump(wm, open(f"worldmodels/{args.game}.pkl", "wb"))
+    # exit()
+    # import ipdb; ipdb.set_trace()
 
-for obj in wm.objects:
-    wm.find_transitions(obj)
+# for obj in wm.objects:
+#     wm.find_transitions(obj)
 
-pkl.dump(wm, open(f"worldmodels/{args.game}.pkl", "wb"))
+wm.make_graph()
 
-# pkl.dump(wm, open(f"worldmodels/{args.game}.pkl", "wb"))
-for obj in wm.objects:
-    obj.make_graph()
+# wm.objects[0].make_graph()
+
+# for obj in wm.objects:
+#     obj.make_graph()
     #
 
 # import ipdb; ipdb.set_trace()
