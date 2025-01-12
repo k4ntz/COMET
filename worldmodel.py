@@ -59,7 +59,7 @@ class WorldModel():
         buffer = pkl.load(open(f'transitions/{self.game}.pkl', 'rb'))
         objs, rams, rgbs, actions, rewards, terms, truncs = buffer
         n = len(rams)
-        self.check_for_hexa(rams)
+        rams = self.convert_rams(rams)
         if sample_k is None:
             self.sample = None
             self.objs, self.rams, self.next_rams, self.rgbs, \
@@ -424,18 +424,26 @@ class WorldModel():
                     print(f"Patch for object {obj.name} saved in patches/{self.game}/{obj.name}.png")
                     break
     
-    def check_for_hexa(self, rams):
+    def convert_rams(self, rams):
         """
         Check if the columns contain hexa values and transform them to decimal
         """
         if not hasattr(self, "_hexa_converted"):
             self._hexa_converted = []
+            self._signed_converted = []
+            rams = rams.astype(np.int16)
             for i in range(rams.shape[1]):
-                if len(np.unique(rams[:,i])) > 10 and all(np.unique(rams[:,i])[:11] == [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 16]):
+                uniq_val = np.unique(rams[:,i])
+                if len(uniq_val) > 10 and all(uniq_val[:11] == [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 16]):
                     print(f"Hexa values detected for ram[{i}]. Transforming to decimal.")
-                    print(np.unique(rams[:, i]), end=" -> ")
                     rams[:, i] = [int(format(x, 'x')) for x in rams[:, i]]
                     self._hexa_converted.append(i)
-                    print(np.unique(rams[:, i]))
+                    print(uniq_val, " -> ", np.unique(rams[:, i]))
+                elif len(uniq_val) > 1 and max(uniq_val) > 245 and all(uniq_val % 246 < 10):
+                    self._signed_converted.append(i)
+                    print(f"Signed values detected for ram[{i}]. Transforming to signed.")
+                    rams[:, i] = [x - 256 if x > 127 else x for x in rams[:, i]]
+                    print(uniq_val, " -> ", np.unique(rams[:, i]))
         else:
             print(f"Hexa values already converted, using already stored: {self._hexa_converted}.")
+        return rams
