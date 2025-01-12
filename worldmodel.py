@@ -12,15 +12,16 @@ from ocatari.vision.utils import find_objects
 from ocatari.ram.game_objects import NoObject, ValueObject
 
 from gameobject import GameObject
-from utils import remove_constant, get_model, split_updated_rams, extend_with_signed_rams, replace_vnames
+from utils import remove_constant_and_equivalent, get_model, \
+                  extend_with_signed_rams, replace_vnames, eq_name, \
+                  SRAM_RAM_PATTERN
 
 warnings.filterwarnings("ignore")
 
 class WorldModel():
     def __init__(self, game):
         self.game = game
-        env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
-        self.oc_env = env
+        self.oc_env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
 
         # build the slots correspondance
         slots = {}
@@ -37,11 +38,12 @@ class WorldModel():
         self.slots = slots
         objects = []
         for obj_name, slot_idx in self.slots.items():
-            obj = env._slots[slot_idx]
+            obj = self.oc_env._slots[slot_idx]
             hv = isinstance(obj, ValueObject)
             objects.append(GameObject(obj_name, obj.rgb, value_object=hv))
         self.objects = objects
 
+        self.ram_equations = {}
         self.update_conditions = {}
 
         self._background_rgb = None
@@ -49,7 +51,6 @@ class WorldModel():
 
         np.random.seed(0)
         random.seed(0)
-    
 
     def load_transitions(self, sample_k=None):
         """
@@ -72,11 +73,22 @@ class WorldModel():
                 self.actions, self.rewards, self.terms, self.truncs \
                     = objs[sample], rams[sample], rams[sample+1], rgbs[sample], \
                         actions[sample], rewards[sample], terms[sample], truncs[sample]
+            
+        self.rams_mapping, self.equivalents = remove_constant_and_equivalent(self.rams)
+        self.acts_mapping, _ = remove_constant_and_equivalent(self.actions)
         
         if not self._background_rgb:
             self._get_background_color()
         if not self._patches_done:
             self._get_objects_patches()
+
+    @property
+    def clean_rams(self):
+        return self.rams[:, self.rams_mapping]
+    
+    @property
+    def clean_actions(self):
+        return self.rams[:, self.acts_mapping]
     
     def unload_transitions(self):
         """
@@ -147,6 +159,14 @@ class WorldModel():
                 obj.ws.append(None)
                 obj.hs.append(None)
 
+    def _split_updated_rams(self, to_track):
+        nstates, _ = self.rams.shape
+        is_updated_at_state = np.zeros(nstates)
+        for i, (state, next_state) in enumerate(zip(self.rams, self.next_rams)):
+            if state[to_track] != next_state[to_track]:
+                is_updated_at_state[i] = 1
+        return is_updated_at_state.astype(np.bool_)
+
     def regress(self, rams, objective, vnames, prop, obj):
         """
         Perform regression of an object's property on non constant ram states.
@@ -159,7 +179,7 @@ class WorldModel():
             print(f"\nRegressing property {prop} of object {obj.name}.")
             min_val = np.min(objective)
             max_val = np.max(objective)
-            model = get_model(l1_loss=True, min_val=min_val, max_val=max_val)
+            model = get_model(l1_loss=True, min_val=min_val, max_val=max_val, complexity_of_vars=4)
             model.fit(rams, objective, variable_names=vnames)
             best = model.get_best()
             eq = best['equation']
@@ -184,14 +204,13 @@ class WorldModel():
         Constant ram states are filtered out before running the regression.
         """
         visibles = np.array(obj.visibles)
-        rams = self.rams[visibles]
-        nc_rams, rams_mapping = remove_constant(rams)
-        vnames = [f"ram_{i}" for i in rams_mapping]
+        rams = self.clean_rams[visibles]
+        vnames = [f"ram_{i}" for i in self.rams_mapping]
 
         for prop in obj.properties:
             if prop != "visible":
                 objectives = np.array(obj.__getattribute__(f"{prop}s"))[visibles]
-                self.regress(nc_rams, objectives, vnames, prop, obj)
+                self.regress(rams, objectives, vnames, prop, obj)
 
 
     def find_connected_rams(self):
@@ -201,20 +220,23 @@ class WorldModel():
         for obj in self.objects:
             self._find_ram(obj)
 
-    def _find_hidden_state(self, ram_idx, separate_on_upd=False):
+    def _find_hidden_state(self, ram_idx, separate_on_upd=False, signed=False):
         """
         Find how to update a ram cell at next time step.
         """
-        if separate_on_upd:
-            is_upd_at_state, non_cst_rams, non_cst_next_rams \
-                = split_updated_rams(self.rams, self.next_rams, ram_idx)
+        objective = next_rams[:, ram_idx]
+        if signed:
+            objective = objective.astype(np.int8)
+        max_val = np.max(objective) + 1
 
-            nc_rams, rams_mapping = remove_constant(self.rams)
-            vnames = [f"ram_{i}" for i in rams_mapping]
+        if separate_on_upd:
+            is_upd_at_state = self._split_updated_rams(ram_idx)
+            vnames = [f"ram_{i}" for i in self.rams_mapping]
 
             print(f"\nRegressing when {ram_idx} is updated.")
-            model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and", "mod"])
-            model.fit(nc_rams, is_upd_at_state, variable_names=vnames)
+            model = get_model(l1_loss=True, mod_max=max_val,
+                              binops=["greater", "logical_or", "logical_and", "mod"])
+            model.fit(self.clean_rams, is_upd_at_state, variable_names=vnames)
             best = model.get_best()
             eq = best['equation']
             print(f"Regression done. Best equation: `{eq}`. Keep it? [y/n]")
@@ -227,24 +249,22 @@ class WorldModel():
             print(f"Storing equation: `{eq}`.")
             self.update_conditions[f"ram[{ram_idx}]"] = eq
 
-            rams = non_cst_rams
-            acts = self.actions[is_upd_at_state]
-            next_rams = non_cst_next_rams
+            rams = self.clean_rams[is_upd_at_state]
+            acts = self.clean_actions[is_upd_at_state]
+            next_rams = self.next_rams[is_upd_at_state]
 
         else:
-            rams = self.rams
-            acts = self.actions
+            rams = self.clean_rams
+            acts = self.clean_actions
             next_rams = self.next_rams
 
-        nc_rams, rams_mapping = remove_constant(rams)
-        extended_rams = extend_with_signed_rams(nc_rams)
-        nc_acts, acts_mapping = remove_constant(acts)
-        extended_rams_and_acts = np.concatenate((extended_rams, nc_acts), axis=1)
-        extended_vnames = [f"ram_{i}" for i in rams_mapping] + [f"sram_{i}" for i in rams_mapping] \
-                         + [f"act_{i}" for i in acts_mapping]
+        extended_rams = extend_with_signed_rams(rams)
+        extended_rams_and_acts = np.concatenate((extended_rams, acts), axis=1)
+        extended_vnames = [f"ram_{i}" for i in self.rams_mapping] \
+                        + [f"sram_{i}" for i in self.rams_mapping] \
+                        + [f"act_{i}" for i in self.acts_mapping]
         print(f"\nRegressing hidden state of ram {ram_idx}.")
-        objective = next_rams[:, ram_idx]
-        model = get_model(l1_loss=True, binops=["+", "-", "*", "/", "mod"])
+        model = get_model(l1_loss=True, mod_max=max_val, binops=["+", "-", "*", "mod"])
         model.fit(extended_rams_and_acts, objective, variable_names=extended_vnames)
         best = model.get_best()
         eq = best['equation']
@@ -260,24 +280,39 @@ class WorldModel():
 
     def find_transitions(self, obj):
         print(f"\nFinding transitions for object {obj.name}.")
-        print(obj.connected_rams)
-        for ram_idx in obj.connected_rams:
-            eq = self._find_hidden_state(int(ram_idx), separate_on_upd=False)
-            _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq)
-            print("Do you want to run another regression only on updated rams? [y/n]")
-            if input() == 'y':
-                eq = self._find_hidden_state(int(ram_idx), separate_on_upd=True)
-                _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq, separate_on_upd=True)
-            print(f"Storing equation: `{eq}`.")
-            obj.equations[f"ram[{ram_idx}]"] = eq
-    
-    @property
-    def ram_equations(self):
-        dico = {}
+        connected_rams = obj.connected_rams
+        print(f"Connected rams: {connected_rams}")
+        signeds = [False for _ in connected_rams]
+        while connected_rams:
+            import ipdb; ipdb.set_trace()
+            ram_idx = int(connected_rams.pop(0))
+            signed = signeds.pop(0)
+            eqname = eq_name(ram_idx, next=False, signed=signed)
+            if eqname in self.ram_equations:
+                print(f"Ram {ram_idx} already covered.")
+            else:
+                eq = self._find_hidden_state(ram_idx, separate_on_upd=False, signed=signed)
+                neqname = eq_name(ram_idx, next=True, signed=signed)
+                _ = self.compute_accuracy(neqname + " == " + eq)
+                print("Do you want to run another regression only on updated rams? [y/n]")
+                if input() == 'y':
+                    eq = self._find_hidden_state(ram_idx, separate_on_upd=True, signed=True)
+                    _ = self.compute_accuracy(neqname + " == " + eq, separate_on_upd=True)
+                print(f"Storing equation: `{eq}`.")
+                self.equations[eqname] = eq
+
+            connected_next = re.findall(SRAM_RAM_PATTERN, eq)
+            for rams in connected_next:
+                prefix, nb = rams
+                connected_rams.append(nb)
+                if prefix == "ram":
+                    signeds.append(False)
+                elif prefix == "sram":
+                    signeds.append(True)
+
+    def find_all_transitions(self):
         for obj in self.objects:
-            for prop, eq in obj.equations.items():
-                if "ram" in prop and prop not in dico:
-                    dico[prop] = eq
+            self.find_transitions(obj)
     
     def make_graph(self):
         network = Network(notebook=True, directed=True, heading=self.game, 
@@ -310,9 +345,9 @@ class WorldModel():
             match = re.search(pattern, formulae)
             if match:
                 to_track = int(match.group(1))
-                is_upd, ram, nram = split_updated_rams(self.rams, self.next_rams, to_track)
+                is_upd = self._split_updated_rams(to_track)
                 n = len(ram)
-                ram, nram = ram.T, nram.T
+                ram, nram = self.rams[is_upd].T, self.next_rams[is_upd].T
                 sram, snram = ram.astype(np.int8), nram.astype(np.int8)
                 act = self.actions[is_upd].T
             else:
@@ -406,4 +441,3 @@ class WorldModel():
                     print(np.unique(rams[:, i]))
         else:
             print(f"Hexa values already converted, using already stored: {self._hexa_converted}.")
-        

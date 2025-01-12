@@ -3,7 +3,9 @@ from pyvis.network import Network
 import re
 import json
 import uuid
-from utils import replace_float_with_int_if_close, encode_image_to_base64
+
+from utils import replace_float_with_int_if_close, encode_image_to_base64, \
+                  RAM_PATTERN, ACT_PATTERN
 
 COLORS = {
     "blue": '#4bc9dd',
@@ -12,10 +14,6 @@ COLORS = {
     "yellow": '#dddd44',
     "white": '#ffffff'
     }
-
-RAM_PATTERN = r'ram\[(\d{1,3})\]'
-ACT_PATTERN = r'act\[(\d{1,3})\]'
-MIN_PATTERN = r'min\[(\d{1,3})\]'
 
 class GameObject():
     def __init__(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210, value_object=False):
@@ -171,7 +169,7 @@ class GameObject():
                     ram_idx = re.search(RAM_PATTERN, self.equations[prop]).group(1)
                     if not ram_idx in rams:
                         rams.append(ram_idx)
-        return rams        
+        return rams
     
 
 
