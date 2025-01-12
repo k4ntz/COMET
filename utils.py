@@ -41,7 +41,9 @@ def get_model(l1_loss=True, min_val=None, max_val=None, binops=BINOPS, vnames=[]
         un_ops.append(f + "(x) = min(x, " + str(max_val) + ")")
         extra_sympy_mappings[f] = lambda x: sympy.Min(max_val, x)
 
+
     return PySRRegressor(
+        population_size=50,
         niterations = 50,  # < Increase me for better results
         maxsize = 10,
         binary_operators = binops,
@@ -106,3 +108,5 @@ def encode_image_to_base64(image_path):
         encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
         mime_type = "image/" + image_path.split(".")[-1]  # Infer MIME type from file extension
         return f"data:{mime_type};base64,{encoded_string}"
+
+

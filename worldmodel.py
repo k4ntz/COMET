@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore")
 
 class WorldModel():
     def __init__(self, game):
-        self.game_name = game
+        self.game = game
         env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
         self.oc_env = env
 
@@ -49,11 +49,7 @@ class WorldModel():
 
         np.random.seed(0)
         random.seed(0)
-        
-
-    @property
-    def game(self):
-        return self.game_name
+    
 
     def load_transitions(self, sample_k=None):
         """
@@ -62,6 +58,7 @@ class WorldModel():
         buffer = pkl.load(open(f'transitions/{self.game}.pkl', 'rb'))
         objs, rams, rgbs, actions, rewards, terms, truncs = buffer
         n = len(rams)
+        self.check_for_hexa(rams)
         if sample_k is None:
             self.sample = None
             self.objs, self.rams, self.next_rams, self.rgbs, \
@@ -283,7 +280,7 @@ class WorldModel():
                     dico[prop] = eq
     
     def make_graph(self):
-        network = Network(notebook=True, directed=True, heading=self.game_name, 
+        network = Network(notebook=True, directed=True, heading=self.game, 
                           bgcolor=f"rgb{self._background_rgb}", height="800px")
         for obj in self.objects:
             obj.make_graph(network)
@@ -340,7 +337,7 @@ class WorldModel():
     def __getstate__(self):
         self.unload_transitions()
         state = self.__dict__.copy()
-        state["game"] = self.game_name
+        state["game"] = self.game
         del state["oc_env"]
         return state
     
@@ -379,7 +376,7 @@ class WorldModel():
     
     def _get_objects_patches(self):
         self._patches_done = True
-        os.makedirs(f"patches/{self.game_name}", exist_ok=True)
+        os.makedirs(f"patches/{self.game}", exist_ok=True)
         for i, obj in enumerate(self.objects):
             while True:
                 t = random.randint(0, len(self.rgbs)-1)
@@ -387,9 +384,26 @@ class WorldModel():
                     x, y, w, h = self.objs[t][i].xywh
                     patch = self.rgbs[t][y:y + h, x:x + w, :]
                     obj._patchsize = max(w, h)
-                    obj._patchpath = f"patches/{self.game_name}/{obj.name}.png"
+                    obj._patchpath = f"patches/{self.game}/{obj.name}.png"
                     image = Image.fromarray(patch)
                     image.save(obj._patchpath, 
                                format="PNG", compress_level=0)
-                    print(f"Patch for object {obj.name} saved in patches/{self.game_name}/{obj.name}.png")
+                    print(f"Patch for object {obj.name} saved in patches/{self.game}/{obj.name}.png")
                     break
+    
+    def check_for_hexa(self, rams):
+        """
+        Check if the columns contain hexa values and transform them to decimal
+        """
+        if not hasattr(self, "_hexa_converted"):
+            self._hexa_converted = []
+            for i in range(rams.shape[1]):
+                if len(np.unique(rams[:,i])) > 10 and all(np.unique(rams[:,i])[:11] == [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 16]):
+                    print(f"Hexa values detected for ram[{i}]. Transforming to decimal.")
+                    print(np.unique(rams[:, i]), end=" -> ")
+                    rams[:, i] = [int(format(x, 'x')) for x in rams[:, i]]
+                    self._hexa_converted.append(i)
+                    print(np.unique(rams[:, i]))
+        else:
+            print(f"Hexa values already converted, using already stored: {self._hexa_converted}.")
+        
