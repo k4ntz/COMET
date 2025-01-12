@@ -179,7 +179,7 @@ class WorldModel():
             print(f"\nRegressing property {prop} of object {obj.name}.")
             min_val = np.min(objective)
             max_val = np.max(objective)
-            model = get_model(l1_loss=True, min_val=min_val, max_val=max_val)
+            model = get_model(l1_loss=True, min_val=min_val, max_val=max_val, complexity_of_vars=4)
             model.fit(rams, objective, variable_names=vnames)
             best = model.get_best()
             eq = best['equation']
@@ -224,12 +224,18 @@ class WorldModel():
         """
         Find how to update a ram cell at next time step.
         """
+        objective = next_rams[:, ram_idx]
+        if signed:
+            objective = objective.astype(np.int8)
+        max_val = np.max(objective) + 1
+
         if separate_on_upd:
             is_upd_at_state = self._split_updated_rams(ram_idx)
             vnames = [f"ram_{i}" for i in self.rams_mapping]
 
             print(f"\nRegressing when {ram_idx} is updated.")
-            model = get_model(l1_loss=True, binops=["greater", "logical_or", "logical_and", "mod"])
+            model = get_model(l1_loss=True, mod_max=max_val,
+                              binops=["greater", "logical_or", "logical_and", "mod"])
             model.fit(self.clean_rams, is_upd_at_state, variable_names=vnames)
             best = model.get_best()
             eq = best['equation']
@@ -258,10 +264,7 @@ class WorldModel():
                         + [f"sram_{i}" for i in self.rams_mapping] \
                         + [f"act_{i}" for i in self.acts_mapping]
         print(f"\nRegressing hidden state of ram {ram_idx}.")
-        objective = next_rams[:, ram_idx]
-        if signed:
-            objective = objective.astype(np.int8)
-        model = get_model(l1_loss=True, binops=["+", "-", "*", "/", "mod"])
+        model = get_model(l1_loss=True, mod_max=max_val, binops=["+", "-", "*", "mod"])
         model.fit(extended_rams_and_acts, objective, variable_names=extended_vnames)
         best = model.get_best()
         eq = best['equation']

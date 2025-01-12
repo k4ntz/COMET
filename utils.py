@@ -30,7 +30,8 @@ def remove_constant_and_equivalent(rams):
     rams_mapping = [i for i in list(range(ncells)) if i not in to_remove]
     return np.array(rams_mapping), equivalents
 
-def get_model(l1_loss=True, min_val=None, max_val=None, binops=BINOPS, vnames=[]):
+def get_model(l1_loss=True, min_val=None, max_val=None, mod_max=None,
+              binops=BINOPS, complexity_of_vars=2):
     if l1_loss:
         loss = "L1DistLoss()"
     else:
@@ -39,15 +40,19 @@ def get_model(l1_loss=True, min_val=None, max_val=None, binops=BINOPS, vnames=[]
     un_ops = []
     extra_sympy_mappings = {}
     if min_val is not None:
-        f = "max_" + str(min_val)
+        f = "above_" + str(min_val)
         f = f.replace("-", "minus_")
         un_ops.append(f + "(x) = max(x, " + str(min_val) + ")")
         extra_sympy_mappings[f] = lambda x: sympy.Max(min_val, x)
     if max_val is not None:
-        f = "min_" + str(max_val)
+        f = "below_" + str(max_val)
         f = f.replace("-", "minus_")
         un_ops.append(f + "(x) = min(x, " + str(max_val) + ")")
         extra_sympy_mappings[f] = lambda x: sympy.Min(max_val, x)
+    if mod_max is not None:
+        f = "mod_" + str(mod_max)
+        un_ops.append(f + "(x) = mod(" + str(mod_max) + ", x)")
+        extra_sympy_mappings[f] = lambda x: sympy.Mod(x, max_val)
 
     return PySRRegressor(
         niterations = 50,  # < Increase me for better results
@@ -56,7 +61,7 @@ def get_model(l1_loss=True, min_val=None, max_val=None, binops=BINOPS, vnames=[]
         unary_operators = un_ops,
         extra_sympy_mappings = extra_sympy_mappings,
         elementwise_loss = loss,
-        complexity_of_variables=2,
+        complexity_of_variables = complexity_of_vars,
         temp_equation_file=True,  # Don't write final or intermediate CSVs
     )
 
@@ -70,13 +75,13 @@ def extend_with_signed_rams(rams):
     return extended_rams
 
 def replace_vnames(eq):
-    eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
-    eq = re.sub(r'min\[(\d{1,3})\]\(', r'min(\1, ', eq)
-    eq = re.sub(r'max\[(\d{1,3})\]\(', r'max(\1, ', eq)
     try:
         eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
-        eq = re.sub(r'min\[(\d{1,3})\]\(', r'min(\1, ', eq)
-        eq = re.sub(r'max\[(\d{1,3})\]\(', r'max(\1, ', eq)
+        eq = re.sub(r'below\[(\d{1,3})\]\(', r'min(\1, ', eq)
+        eq = re.sub(r'above\[(\d{1,3})\]\(', r'max(\1, ', eq)
+        eq = re.sub(r'below_minus\[(\d{1,3})\]\(', r'min(-\1, ', eq)
+        eq = re.sub(r'above_minus\[(\d{1,3})\]\(', r'max(-\1, ', eq)
+        eq = re.sub(r'mod\[(\d+)\]\((.+)\)', r'mod(\2, \1)', eq)
         return eq
     except TypeError:
         return eq

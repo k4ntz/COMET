@@ -6,3 +6,5 @@ env/
 *.zip
 transitions/
 hall_of_fame*
+patches/
+*.png
