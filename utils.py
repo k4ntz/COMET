@@ -52,17 +52,17 @@ def get_model(l1_loss=True, min_val=None, max_val=None, binops=BINOPS, vnames=[]
         temp_equation_file=True,  # Don't write final or intermediate CSVs
     )
 
-def split_constant_variable_rams(rams, next_rams, to_track):
+def split_updated_rams(rams, next_rams, to_track):
     nstates, _ = rams.shape
-    is_constant_at_state = np.zeros(nstates)
+    is_updated_at_state = np.zeros(nstates)
     for i, (state, next_state) in enumerate(zip(rams, next_rams)):
-        if state[to_track] == next_state[to_track]:
-            is_constant_at_state[i] = 1
-    is_constant_at_state = is_constant_at_state.astype(np.bool_)
+        if state[to_track] != next_state[to_track]:
+            is_updated_at_state[i] = 1
+    is_updated_at_state = is_updated_at_state.astype(np.bool_)
 
-    non_cst_rams = rams[~is_constant_at_state]
-    non_cst_next_rams = next_rams[~is_constant_at_state]
-    return is_constant_at_state, non_cst_rams, non_cst_next_rams
+    non_cst_rams = rams[is_updated_at_state]
+    non_cst_next_rams = next_rams[is_updated_at_state]
+    return is_updated_at_state, non_cst_rams, non_cst_next_rams
 
 def extend_with_signed_rams(rams):
     nstates, ncells = rams.shape
@@ -77,7 +77,13 @@ def replace_vnames(eq):
     eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
     eq = re.sub(r'min\[(\d{1,3})\]\(', r'min(\1, ', eq)
     eq = re.sub(r'max\[(\d{1,3})\]\(', r'max(\1, ', eq)
-    return eq
+    try:
+        eq = re.sub(r'_(\d{1,3})', r'[\1]', eq)
+        eq = re.sub(r'min\[(\d{1,3})\]\(', r'min(\1, ', eq)
+        eq = re.sub(r'max\[(\d{1,3})\]\(', r'max(\1, ', eq)
+        return eq
+    except TypeError:
+        return eq
 
 def replace_float_with_int_if_close(s):
     pattern = re.compile(r'-?\d+(\.\d+)?')  # matches possible signed floats/ints
