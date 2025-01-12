@@ -12,15 +12,16 @@ from ocatari.vision.utils import find_objects
 from ocatari.ram.game_objects import NoObject, ValueObject
 
 from gameobject import GameObject
-from utils import remove_constant_and_equivalent, get_model, extend_with_signed_rams, replace_vnames
+from utils import remove_constant_and_equivalent, get_model, \
+                  extend_with_signed_rams, replace_vnames, eq_name, \
+                  SRAM_RAM_PATTERN
 
 warnings.filterwarnings("ignore")
 
 class WorldModel():
     def __init__(self, game):
-        self.game_name = game
-        env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
-        self.oc_env = env
+        self.game = game
+        self.oc_env = OCAtari(game, mode="ram", hud=True, render_mode="rgb_array")
 
         # build the slots correspondance
         slots = {}
@@ -37,11 +38,12 @@ class WorldModel():
         self.slots = slots
         objects = []
         for obj_name, slot_idx in self.slots.items():
-            obj = env._slots[slot_idx]
+            obj = self.oc_env._slots[slot_idx]
             hv = isinstance(obj, ValueObject)
             objects.append(GameObject(obj_name, obj.rgb, value_object=hv))
         self.objects = objects
 
+        self.ram_equations = {}
         self.update_conditions = {}
 
         self._background_rgb = None
@@ -49,11 +51,7 @@ class WorldModel():
 
         np.random.seed(0)
         random.seed(0)
-        
 
-    @property
-    def game(self):
-        return self.game_name
 
     def load_transitions(self, sample_k=None):
         """
@@ -222,7 +220,7 @@ class WorldModel():
         for obj in self.objects:
             self._find_ram(obj)
 
-    def _find_hidden_state(self, ram_idx, separate_on_upd=False):
+    def _find_hidden_state(self, ram_idx, separate_on_upd=False, signed=False):
         """
         Find how to update a ram cell at next time step.
         """
@@ -261,6 +259,8 @@ class WorldModel():
                         + [f"act_{i}" for i in self.acts_mapping]
         print(f"\nRegressing hidden state of ram {ram_idx}.")
         objective = next_rams[:, ram_idx]
+        if signed:
+            objective = objective.astype(np.int8)
         model = get_model(l1_loss=True, binops=["+", "-", "*", "/", "mod"])
         model.fit(extended_rams_and_acts, objective, variable_names=extended_vnames)
         best = model.get_best()
@@ -277,27 +277,42 @@ class WorldModel():
 
     def find_transitions(self, obj):
         print(f"\nFinding transitions for object {obj.name}.")
-        print(obj.connected_rams)
-        for ram_idx in obj.connected_rams:
-            eq = self._find_hidden_state(int(ram_idx), separate_on_upd=False)
-            _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq)
-            print("Do you want to run another regression only on updated rams? [y/n]")
-            if input() == 'y':
-                eq = self._find_hidden_state(int(ram_idx), separate_on_upd=True)
-                _ = self.compute_accuracy(f"nram[{ram_idx}] == " + eq, separate_on_upd=True)
-            print(f"Storing equation: `{eq}`.")
-            obj.equations[f"ram[{ram_idx}]"] = eq
-    
-    @property
-    def ram_equations(self):
-        dico = {}
+        connected_rams = obj.connected_rams
+        print(f"Connected rams: {connected_rams}")
+        signeds = [False for _ in connected_rams]
+        while connected_rams:
+            import ipdb; ipdb.set_trace()
+            ram_idx = int(connected_rams.pop(0))
+            signed = signeds.pop(0)
+            eqname = eq_name(ram_idx, next=False, signed=signed)
+            if eqname in self.ram_equations:
+                print(f"Ram {ram_idx} already covered.")
+            else:
+                eq = self._find_hidden_state(ram_idx, separate_on_upd=False, signed=signed)
+                neqname = eq_name(ram_idx, next=True, signed=signed)
+                _ = self.compute_accuracy(neqname + " == " + eq)
+                print("Do you want to run another regression only on updated rams? [y/n]")
+                if input() == 'y':
+                    eq = self._find_hidden_state(ram_idx, separate_on_upd=True, signed=True)
+                    _ = self.compute_accuracy(neqname + " == " + eq, separate_on_upd=True)
+                print(f"Storing equation: `{eq}`.")
+                self.equations[eqname] = eq
+
+            connected_next = re.findall(SRAM_RAM_PATTERN, eq)
+            for rams in connected_next:
+                prefix, nb = rams
+                connected_rams.append(nb)
+                if prefix == "ram":
+                    signeds.append(False)
+                elif prefix == "sram":
+                    signeds.append(True)
+
+    def find_all_transitions(self):
         for obj in self.objects:
-            for prop, eq in obj.equations.items():
-                if "ram" in prop and prop not in dico:
-                    dico[prop] = eq
+            self.find_transitions(obj)
     
     def make_graph(self):
-        network = Network(notebook=True, directed=True, heading=self.game_name, 
+        network = Network(notebook=True, directed=True, heading=self.game, 
                           bgcolor=f"rgb{self._background_rgb}", height="800px")
         for obj in self.objects:
             obj.make_graph(network)
@@ -354,7 +369,7 @@ class WorldModel():
     def __getstate__(self):
         self.unload_transitions()
         state = self.__dict__.copy()
-        state["game"] = self.game_name
+        state["game"] = self.game
         del state["oc_env"]
         return state
     
@@ -393,7 +408,7 @@ class WorldModel():
     
     def _get_objects_patches(self):
         self._patches_done = True
-        os.makedirs(f"patches/{self.game_name}", exist_ok=True)
+        os.makedirs(f"patches/{self.game}", exist_ok=True)
         for i, obj in enumerate(self.objects):
             while True:
                 t = random.randint(0, len(self.rgbs)-1)
@@ -401,9 +416,9 @@ class WorldModel():
                     x, y, w, h = self.objs[t][i].xywh
                     patch = self.rgbs[t][y:y + h, x:x + w, :]
                     obj._patchsize = max(w, h)
-                    obj._patchpath = f"patches/{self.game_name}/{obj.name}.png"
+                    obj._patchpath = f"patches/{self.game}/{obj.name}.png"
                     image = Image.fromarray(patch)
                     image.save(obj._patchpath, 
                                format="PNG", compress_level=0)
-                    print(f"Patch for object {obj.name} saved in patches/{self.game_name}/{obj.name}.png")
+                    print(f"Patch for object {obj.name} saved in patches/{self.game}/{obj.name}.png")
                     break

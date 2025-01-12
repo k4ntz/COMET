@@ -4,15 +4,18 @@ import sympy
 import re
 import base64
 
-
 BINOPS = ["+", "-", "max", "min"]
+
+RAM_PATTERN = r'ram\[(\d{1,3})\]'
+ACT_PATTERN = r'act\[(\d{1,3})\]'
+SRAM_RAM_PATTERN = r'\b(s?ram)\[(\d{1,3})\]'
 
 def remove_constant_and_equivalent(rams):
     ncells = len(rams[0])
     constants = []
     equivalents = {}
     for i in range(ncells):
-        if len(np.unique(all_states[:, i])) == 1:
+        if len(np.unique(rams[:, i])) == 1:
             constants.append(i)
         else:
             stop = False
@@ -99,3 +102,15 @@ def encode_image_to_base64(image_path):
         encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
         mime_type = "image/" + image_path.split(".")[-1]  # Infer MIME type from file extension
         return f"data:{mime_type};base64,{encoded_string}"
+    
+def eq_name(ram_idx, next, signed):
+    eqname = f"ram[{ram_idx}]"
+    if next:
+        eqname = 'n' + eqname
+    if signed:
+        eqname = 's' + eqname
+    return eqname
+
+def find_connected_rams(eq):
+    if "ram" in eq:
+        return re.findall(RAM_PATTERN, eq)
