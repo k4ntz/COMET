@@ -52,7 +52,7 @@ def get_model(l1_loss=True, min_val=None, max_val=None, mod_max=None,
     if mod_max is not None:
         f = "mod_" + str(mod_max)
         un_ops.append(f + "(x) = mod(" + str(mod_max) + ", x)")
-        extra_sympy_mappings[f] = lambda x: sympy.Mod(x, max_val)
+        extra_sympy_mappings[f] = lambda x: sympy.Mod(x, mod_max)
 
 
     return PySRRegressor(

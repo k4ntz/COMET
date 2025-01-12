@@ -224,7 +224,7 @@ class WorldModel():
         """
         Find how to update a ram cell at next time step.
         """
-        objective = next_rams[:, ram_idx]
+        objective = self.next_rams[:, ram_idx]
         if signed:
             objective = objective.astype(np.int8)
         max_val = np.max(objective) + 1
@@ -251,12 +251,11 @@ class WorldModel():
 
             rams = self.clean_rams[is_upd_at_state]
             acts = self.clean_actions[is_upd_at_state]
-            next_rams = self.next_rams[is_upd_at_state]
-
+            objective = objective[is_upd_at_state]
+        
         else:
             rams = self.clean_rams
             acts = self.clean_actions
-            next_rams = self.next_rams
 
         extended_rams = extend_with_signed_rams(rams)
         extended_rams_and_acts = np.concatenate((extended_rams, acts), axis=1)
@@ -284,7 +283,6 @@ class WorldModel():
         print(f"Connected rams: {connected_rams}")
         signeds = [False for _ in connected_rams]
         while connected_rams:
-            import ipdb; ipdb.set_trace()
             ram_idx = int(connected_rams.pop(0))
             signed = signeds.pop(0)
             eqname = eq_name(ram_idx, next=False, signed=signed)
@@ -299,16 +297,16 @@ class WorldModel():
                     eq = self._find_hidden_state(ram_idx, separate_on_upd=True, signed=True)
                     _ = self.compute_accuracy(neqname + " == " + eq, separate_on_upd=True)
                 print(f"Storing equation: `{eq}`.")
-                self.equations[eqname] = eq
+                self.ram_equations[eqname] = eq
 
-            connected_next = re.findall(SRAM_RAM_PATTERN, eq)
-            for rams in connected_next:
-                prefix, nb = rams
-                connected_rams.append(nb)
-                if prefix == "ram":
-                    signeds.append(False)
-                elif prefix == "sram":
-                    signeds.append(True)
+                connected_next = re.findall(SRAM_RAM_PATTERN, eq)
+                for rams in connected_next:
+                    prefix, nb = rams
+                    connected_rams.append(nb)
+                    if prefix == "ram":
+                        signeds.append(False)
+                    elif prefix == "sram":
+                        signeds.append(True)
 
     def find_all_transitions(self):
         for obj in self.objects:
@@ -346,10 +344,10 @@ class WorldModel():
             if match:
                 to_track = int(match.group(1))
                 is_upd = self._split_updated_rams(to_track)
-                n = len(ram)
                 ram, nram = self.rams[is_upd].T, self.next_rams[is_upd].T
                 sram, snram = ram.astype(np.int8), nram.astype(np.int8)
                 act = self.actions[is_upd].T
+                n = len(ram.T)
             else:
                 print("No ram index found in formulae")
                 return
