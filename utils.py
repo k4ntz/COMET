@@ -3,6 +3,7 @@ from pysr import PySRRegressor
 import sympy
 import re
 import base64
+import sympy as sp
 
 BINOPS = ["+", "-", "max", "min"]
 
@@ -103,6 +104,25 @@ def replace_float_with_int_if_close(s):
             return original_text
 
     return pattern.sub(maybe_int, s)
+
+def simplify_equation_with_arrays(rhs):
+    rhs = re.sub(r"(\w+)\[(\d+)\]", r"\1_\2", rhs)
+    
+    # Split into left-hand and right-hand sides
+    rhs = sp.sympify(rhs.strip())  # Parse RHS
+
+    # Simplify RHS and round every number to an integer
+    def round_constants(expr):
+        return expr.xreplace({n: int(round(n)) for n in expr.atoms(sp.Number)})
+
+    simplified_rhs = round_constants(sp.simplify(rhs))
+    
+
+    # Convert identifiers back to array-style notation
+    equation_str_simplified = sp.printing.pretty(simplified_rhs, use_unicode=False)
+    equation_str_simplified = re.sub(r"(\w+)_(\d+)", r"\1[\2]", equation_str_simplified)
+
+    return equation_str_simplified
 
 
 def encode_image_to_base64(image_path):

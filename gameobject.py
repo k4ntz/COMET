@@ -16,9 +16,10 @@ COLORS = {
     }
 
 class GameObject():
-    def __init__(self, name, rgb, minx=0, maxx=160, miny=0, maxy=210, value_object=False):
+    def __init__(self, name, rgb, worldmodel, minx=0, maxx=160, miny=0, maxy=210, value_object=False):
         self.name = name
         self.rgb = rgb
+        self.wm = worldmodel
         self.minx = minx
         self.maxx = maxx
         self.miny = miny
@@ -83,6 +84,7 @@ class GameObject():
                     rams.remove(ram)
                 if not ram in covered_rams:
                     covered_rams.append(ram)
+            print(rams)
         os.makedirs("graphs", exist_ok=True)
         if network is None:
             self.net.heading = self.name
@@ -113,37 +115,32 @@ class GameObject():
     def _add_ram_node(self, ram_match, prop, level):
         self.net.add_node(ram_match, label=ram_match, shape='box',
                           color=COLORS["blue"], level=level)
-        self.net.add_edge(ram_match, prop, title=self.equations[prop])
-    
-    def _add_cst_node(self, prop, level):
-        uniq_id = uuid.uuid4().hex
-        self.net.add_node(uniq_id, label=f'{self.equations[prop]}', 
-                          shape='box', color=COLORS["white"], level=level)
-        self.net.add_edge(uniq_id, prop)
-
+        self.net.add_edge(ram_match, prop, title=self.wm.ram_equations[prop])
                 
     def draw_connected_rams(self, rams, level):
         new_rams = []
         for prop in rams:
-            if not isinstance(self.equations[prop], str): # fixing floats
-                self.equations[prop] = str(self.equations[prop])
+            lhs = self.wm.ram_equations[prop]
+            if not isinstance(lhs, str): # fixing floats
+                lhs = str(lhs)
             is_variable = False
-            if "ram" in self.equations[prop]:
-                # TODO add check for multiple rams in equation
-                ram_match = re.search(RAM_PATTERN, self.equations[prop]).group(0)
-                if ram_match != prop: # avoid cycles
-                    self._add_ram_node(ram_match, prop, level)
+            if "ram" in lhs:
+                ram_matches = re.findall(RAM_PATTERN, lhs)
+                for ram in ram_matches:
+                    ram_match = f'ram[{ram}]'
+                    if ram_match != prop: # avoid cycles
+                        self._add_ram_node(ram_match, prop, level)
                 is_variable = True
-            if "act" in self.equations[prop]:
-                action = re.search(ACT_PATTERN, self.equations[prop]).group(0)
+            if "act" in lhs:
+                action = re.search(ACT_PATTERN, lhs).group(0)
                 self.net.add_node(action, label=action,  
                                     shape="box", color=COLORS["yellow"], level=level)
-                self.net.add_edge(action, prop, title=self.equations[prop])
+                self.net.add_edge(action, prop, title=lhs)
                 is_variable = True
             if not is_variable:
-                self.net.add_node(self.equations[prop], label=f'{self.equations[prop]}', 
+                self.net.add_node(lhs, label=f'{lhs}', 
                                   color=COLORS["blue"])
-                self.net.add_edge(self.equations[prop], prop)
+                self.net.add_edge(lhs, prop)
         return new_rams
     
     

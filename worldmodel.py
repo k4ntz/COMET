@@ -6,14 +6,14 @@ import re
 import os
 from pyvis.network import Network
 from PIL import Image
-
+import json
 from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
 from ocatari.ram.game_objects import NoObject, ValueObject
 
 from gameobject import GameObject
 from utils import remove_constant_and_equivalent, get_model, \
-                  replace_vnames, eq_name, RAM_PATTERN
+                  replace_vnames, eq_name, simplify_equation_with_arrays, RAM_PATTERN
 
 warnings.filterwarnings("ignore")
 
@@ -39,7 +39,7 @@ class WorldModel():
         for obj_name, slot_idx in self.slots.items():
             obj = self.oc_env._slots[slot_idx]
             hv = isinstance(obj, ValueObject)
-            objects.append(GameObject(obj_name, obj.rgb, value_object=hv))
+            objects.append(GameObject(obj_name, obj.rgb, self, value_object=hv))
         self.objects = objects
 
         self.ram_equations = {}
@@ -86,7 +86,7 @@ class WorldModel():
     
     @property
     def clean_actions(self):
-        return self.rams[:, self.acts_mapping]
+        return self.actions[:, self.acts_mapping]
     
     def unload_transitions(self):
         """
@@ -242,7 +242,7 @@ class WorldModel():
                 eq_idx = int(input())
                 eq = model.equations_.loc[eq_idx]['equation']
             eq = replace_vnames(eq)
-            print(f"Storing equation: `{eq}`.")
+            print(f"Storing equation: `{eq}` as update condition.")
             self.update_conditions[f"ram[{ram_idx}]"] = eq
 
             rams = self.clean_rams[is_upd_at_state]
@@ -292,23 +292,29 @@ class WorldModel():
                 print(f"Storing equation: `{eq}`.")
                 self.ram_equations[eqname] = eq
 
-                connected_next = re.findall(RAM_PATTERN, eq)
-                for rams in connected_next:
-                    prefix, nb = rams
-                    connected_rams.append(nb)
+                connected_rams.extend(re.findall(RAM_PATTERN, eq))
 
     def find_all_transitions(self):
         for obj in self.objects:
             self.find_transitions(obj)
     
     def make_graph(self):
-        network = Network(notebook=True, directed=True, heading=self.game, 
-                          bgcolor=f"rgb{self._background_rgb}", height="800px")
+        self.simplify_equations()
+        network = Network(notebook=True, directed=True, heading=self.game, height="800px")
+                        #   bgcolor=f"rgb{self._background_rgb}")
         for obj in self.objects:
             obj.make_graph(network)
         self.net = network
+        self.set_net_options()
         self.net.show(f'graphs/{self.game}.html')
         print(f"Graph saved in graphs/{self.game}.html")
+
+    def simplify_equations(self):
+        print("Simplifying equations.")
+        for eq in self.ram_equations:
+            self.ram_equations[eq] = simplify_equation_with_arrays(self.ram_equations[eq])
+        for eq in self.update_conditions:
+            self.update_conditions[eq] = simplify_equation_with_arrays(self.update_conditions[eq])
 
 
     def compute_accuracy(self, formulae, separate_on_upd=False):
@@ -405,6 +411,9 @@ class WorldModel():
                 t = random.randint(0, len(self.rgbs)-1)
                 if self.objs[t][i].visible:
                     x, y, w, h = self.objs[t][i].xywh
+                    x -= 1; y -= 1; w += 2; h += 2
+                    if not (x >= 0 and y >= 0 and x + w < 160 and y + h < 210):
+                        continue
                     patch = self.rgbs[t][y:y + h, x:x + w, :]
                     obj._patchsize = max(w, h)
                     obj._patchpath = f"patches/{self.game}/{obj.name}.png"
@@ -445,3 +454,16 @@ class WorldModel():
                 for i in self._signed_converted:
                     rams[:, i] = [x - 256 if x > 127 else x for x in rams[:, i]]
         return rams
+    
+    def set_net_options(self):
+        options = {
+            "layout": {
+                "hierarchical": {
+                    "enabled": True,
+                    "direction": "LR",  # Top-Down (use "LR" for left-to-right)
+                    "sortMethod": "directed",  # Organize nodes based on direction
+                }
+            }
+        }
+        # Set the options in the Pyvis network
+        self.net.set_options(json.dumps(options))
