@@ -1,11 +1,14 @@
 import os 
 from pyvis.network import Network
+import networkx as nx
 import re
 import json
 import uuid
-
+import pydot    
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
 from utils import replace_float_with_int_if_close, encode_image_to_base64, \
-                  RAM_PATTERN, ACT_PATTERN
+                  convert_to_svg, RAM_PATTERN, ACT_PATTERN
 
 COLORS = {
     "blue": '#4bc9dd',
@@ -58,7 +61,7 @@ class GameObject():
                 self.equations[eq_id] = replace_float_with_int_if_close(eq)
 
 
-    def make_graph(self, network=None):
+    def make_graph(self, network=None, svg=False):
         if network is None:
             self.net = Network(notebook=True, directed=True)
         else:
@@ -67,8 +70,8 @@ class GameObject():
         image_path = encode_image_to_base64(self._patchpath)
         self.net.add_node(self.name, label=f'{self.name}', 
                           color=COLORS["red"], level = 0,
-                          shape="image",
-                          image=image_path,
+                        #   shape="image",
+                        #   image=image_path,
                           size=int(self._patchsize))
         # Configure the hierarchical layout
         # self.set_net_options()
@@ -88,7 +91,10 @@ class GameObject():
         os.makedirs("graphs", exist_ok=True)
         if network is None:
             self.net.heading = self.name
-            self.net.show(f'graphs/{self.name}.html')
+            if svg:
+                convert_to_svg(self.net, f'graphs/{self.name}.svg')
+            else:
+                self.net.show(f'graphs/{self.name}.html')
 
     def draw_properties(self):
         rams = []

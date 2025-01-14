@@ -4,6 +4,8 @@ import sympy
 import re
 import base64
 import sympy as sp
+import json
+import pydot
 
 BINOPS = ["+", "-", "max", "min"]
 
@@ -142,3 +144,41 @@ def eq_name(ram_idx, next):
 def find_connected_rams(eq):
     if "ram" in eq:
         return re.findall(RAM_PATTERN, eq)
+
+
+def convert_to_svg(network, filename):
+    """Convert a Pyvis network to a DOT graph and save it as an SVG file."""
+    graph_json = network.to_json()
+
+    # Load JSON data
+    data = json.loads(graph_json)
+
+    # Extract nodes and edges
+    nodes = eval(data["nodes"])  # Convert stringified list to Python list
+    edges = eval(data["edges"])  # Convert stringified list to Python list
+
+    # Initialize DOT graph
+    dot_graph = "digraph G {\n"
+
+    # Add nodes
+    for node in nodes:
+        node_id = node["id"]
+        label = node.get("label", node_id)
+        color = node.get("color", "#000000")
+        dot_graph += f'    "{node_id}" [label="{label}", color="{color}"];\n'
+
+    # Add edges
+    for edge in edges:
+        from_node = edge["from"]
+        to_node = edge["to"]
+        title = edge.get("title", "")
+        dot_graph += f'    "{from_node}" -> "{to_node}" [label="{title}"];\n'
+
+    # Close DOT graph
+    dot_graph += "}"
+
+    graphs = pydot.graph_from_dot_data(dot_graph)
+    svg_string = graphs[0].create_svg()
+    with open(f"{filename}", "wb") as file:
+        file.write(svg_string)
+    print(f"SVG file saved as {filename}")

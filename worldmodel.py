@@ -4,17 +4,15 @@ import pickle as pkl
 import numpy as np
 import re
 import os
-import networkx as nx
-from networkx.drawing import nx_agraph
+import plotly.graph_objects as go
 from pyvis.network import Network
-from PIL import Image
 import json
 from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
 from ocatari.ram.game_objects import NoObject, ValueObject
 
 from gameobject import GameObject
-from utils import remove_constant_and_equivalent, get_model, \
+from utils import remove_constant_and_equivalent, get_model, convert_to_svg, \
                   replace_vnames, eq_name, simplify_equation_with_arrays, RAM_PATTERN
 
 
@@ -301,7 +299,7 @@ class WorldModel():
         for obj in self.objects:
             self.find_transitions(obj)
     
-    def make_graph(self):
+    def make_graph(self, svg=False):
         self.simplify_equations()
         network = Network(notebook=True, directed=True, heading=self.game, height="800px")
                         #   bgcolor=f"rgb{self._background_rgb}")
@@ -309,12 +307,12 @@ class WorldModel():
             obj.make_graph(network)
         self.net = network
         self.set_net_options()
-        self.net.show(f'graphs/{self.game}.html')
-        # Convert your pyvis_net into NetworkX
-        G_nx = pyvis_to_networkx(self.net)
-        A = nx_agraph.to_agraph(G_nx)
-        A.draw("my_network.svg", prog="dot")
-        print(f"Graph saved in graphs/{self.game}.html")
+        if svg:
+            convert_to_svg(self.net, f'graphs/{self.game}.svg')
+        else:
+            self.net.show(f'graphs/{self.game}.html')
+            print(f"Graph saved in graphs/{self.game}.html")
+    
 
     def simplify_equations(self):
         print("Simplifying equations.")
@@ -475,34 +473,3 @@ class WorldModel():
         # Set the options in the Pyvis network
         self.net.set_options(json.dumps(options))
 
-
-def pyvis_to_networkx(pyvis_net: Network) -> nx.Graph:
-    """
-    Convert a PyVis Network object to a NetworkX Graph or DiGraph,
-    depending on the 'directed' attribute in PyVis.
-    """
-    if pyvis_net.directed:
-        G = nx.DiGraph()
-    else:
-        G = nx.Graph()
-
-    # Add nodes
-    for node_dict in pyvis_net.nodes:
-        node_id = node_dict.get("id")
-        # Remove 'id' so it won't collide with node attributes
-        attr_dict = {k: v for k, v in node_dict.items() if k != "id"}
-        G.add_node(node_id, **attr_dict)
-
-    # Add edges
-    for edge_dict in pyvis_net.edges:
-        src = edge_dict.get("from")
-        dst = edge_dict.get("to")
-        # Remove 'from'/'to' so they won't collide with edge attributes
-        attr_dict = {
-            k: v
-            for k, v in edge_dict.items()
-            if k not in ("from", "to")
-        }
-        G.add_edge(src, dst, **attr_dict)
-
-    return G

@@ -31,7 +31,6 @@ if args.from_scratch or not os.path.exists(f"worldmodels/{args.game}.pkl"):
 
 else:
     wm = pkl.load(open(f"worldmodels/{args.game}.pkl", "rb"))
-    import ipdb; ipdb.set_trace()
     wm.game = wm.oc_env.game_name
     wm.load_transitions()
     # wm._get_objects_patches()
@@ -45,7 +44,7 @@ else:
 
 # pkl.dump(wm, open(f"worldmodels/{args.game}.pkl", "wb"))
 
-wm.make_graph()
+wm.make_graph(svg=True)
 
 # wm.objects[0].make_graph()
 
