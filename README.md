@@ -1,4 +1,4 @@
-# ACWM
+# COMET
 The Atari Causal World Model
 
 ## To record transitions from which to learn
