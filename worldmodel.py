@@ -10,6 +10,7 @@ import json
 from ocatari.core import OCAtari
 from ocatari.vision.utils import find_objects
 from ocatari.ram.game_objects import NoObject, ValueObject
+from PIL import Image
 
 from gameobject import GameObject
 from utils import remove_constant_and_equivalent, get_model, convert_to_svg, \
@@ -289,6 +290,7 @@ class WorldModel():
                 print("Do you want to run another regression only on updated rams? [y/n]")
                 if input() == 'y':
                     eq = self._find_hidden_state(ram_idx, separate_on_upd=True)
+                    eq = str(eq)
                     _ = self.compute_accuracy(neqname + " == " + eq, separate_on_upd=True)
                 print(f"Storing equation: `{eq}`.")
                 self.ram_equations[eqname] = eq
@@ -298,6 +300,137 @@ class WorldModel():
     def find_all_transitions(self):
         for obj in self.objects:
             self.find_transitions(obj)
+
+    def get_good_game_state(self, n_game_steps=100):
+        # prerun some steps to ensure good game state
+        self.oc_env.reset()
+        steps = 0
+        obs = None
+        prev_obs = None
+        finished = True
+        #TODO: find better way than hardcoding ball pos
+        ball_xy = [0, 0]
+        # run until different state is reached
+        while steps < n_game_steps or np.array_equal(obs, prev_obs) or finished or (ball_xy[0] == 0 and ball_xy[1] == 0):
+            prev_obs = obs
+            action = self.oc_env.action_space.sample()
+            obs, reward, term, trunc, info = self.oc_env.step(action)
+            ball_xy = obs[0][2:4]
+            finished = term or trunc
+            steps += 1
+
+    def sample_ram_dist(self, ram_idx: int):
+        """
+        Sample from  the distribution of a certain ram cell from stored transitions.
+        Note: Currently, only categorical distributions are supported.
+        """
+        unique_vals, counts = np.unique(self.rams[:, ram_idx], return_counts=True)
+
+        # normalize
+        counts = counts / np.sum(counts)
+        # sample
+        return np.random.choice(unique_vals, p=counts)
+
+    def validate_transitions(self, n_game_steps=20, acc_threshold=0.8):
+        """
+        Validate the transitions by intervening, i.e. testing whether
+        they hold true when forcefully setting ram cells on the rhs.
+        Example: nram[54] = ram[54] + ram[56]  -> check if nram[54] == ram[54] + 2 when do(ram[56] = 2)
+        Runs the game for a few steps.
+        """
+        # iterate over all wm.ram_equations:
+        #   if equation has other ram location in it:
+        #       - run game for a bit
+        #       - at each step: apply intervention (e.g. do(ram[56] = 2))
+        #       - check if equation still holds (e.g. nram[54] == 11)
+        #       - if not: remove equation from wm.ram_equations (+print)
+
+        # TODO: remove
+        self.ram_equations = {
+            "nram[49]": "ram[49] - ram[58]",
+        }
+
+        new_ram_equations = self.ram_equations.copy()
+        # check each equation individually
+        for key in self.ram_equations.keys():
+            lhs_ram_idx = re.findall(RAM_PATTERN, key)[0]
+            rhs_ram_idxs = re.findall(RAM_PATTERN, self.ram_equations[key])
+            # remove any duplicates
+            rhs_ram_idxs = list(set(rhs_ram_idxs))
+
+            rhs_ram_states = {i: [] for i in rhs_ram_idxs}
+            lhs_ram_states = {i: [] for i in rhs_ram_idxs}
+
+
+            # intervene on each idx on the right hand side individually (in case there are interdependencies)
+            for idx in rhs_ram_idxs:
+                # run game for a bit (to reach a good state)
+                self.get_good_game_state(10)
+
+                for _ in range(n_game_steps):
+                    # store ram_state before intervention (for rhs that updates lhs of next step)
+                    ram_state = self.oc_env.get_ram()
+
+                    # store lhs (nram) of previous step
+                    lhs_ram_states[idx].append(ram_state[int(lhs_ram_idx)])
+
+                    # intervene 
+                    new_val = self.sample_ram_dist(int(idx))
+                    if int(idx) in self._signed_converted and new_val < 0:
+                        # transform to unsigned
+                        new_val += 256
+                    # self.oc_env.set_ram(int(idx), new_val)
+                    ale = self.oc_env.unwrapped.ale
+                    # print('setting: ', new_val)
+                    ale.setRAM(int(idx), new_val)
+
+                    ram_state = self.oc_env.get_ram()
+                    # store rhs (ram) after intervention
+                    rhs_ram_states[idx].append(ram_state)
+
+                    action = 0
+                    # action = self.oc_env.action_space.sample()
+                    self.oc_env.step(action)
+
+            # after: check if eq holds for each idx on rhs (across all steps)
+            num_correct = 0
+            for rhs_idx in rhs_ram_idxs:
+                lhs_state = lhs_ram_states[rhs_idx]
+                rhs_state = rhs_ram_states[rhs_idx]
+                # lhs vals are nram values, meaning that they are the values of the next step
+                # so we can only start from step 1 (only n-1 steps)
+                lhs_vals = [lhs_state[i] for i in range(1, n_game_steps)]
+                eq = f"{key} == {self.ram_equations[key]}" 
+                # Fill left hand side values in eq (first eq is wrong, since no intervention has happened yet)
+                # replace nram[lhs_ram_idx] in eq with lhs_vals 
+                eqs = [eq.replace(f"nram[{lhs_ram_idx}]", str(lhs_val)) for lhs_val in lhs_vals]
+
+                # replace ram[rhs_idx] in eq with ram_states[idx]
+                rhs = eq.split("==")[1]
+                # rhs vals are values of the current step, so we can only go up to n-1 
+                for i in range(n_game_steps-1):
+                    rhs = eqs[i].split("==")[1]
+                    # TODO: how to determine which values are signed or unsigned?
+                    # transform unsigned values to signed
+                    for idx in rhs_ram_idxs:
+                        state = rhs_state[i].copy()
+                        if int(idx) in self._signed_converted:
+                            state = [x - 256 if x > 127 else x for x in state]
+                        rhs = rhs.replace(f"ram[{idx}]", str(state[int(idx)]))
+
+                    eqs[i] = eqs[i].split("==")[0] + "==" + rhs
+                print(eqs)
+                eqs_val = [eval(eq) for eq in eqs]
+                num_correct += eqs_val.count(True)
+            accuracy = (num_correct/len(rhs_ram_idxs)) / (n_game_steps-1)
+            if accuracy < acc_threshold:
+                print(f"Removing equation {key} from wm.ram_equations, due to low accuracy {accuracy:.2f}.")
+                del new_ram_equations[key]
+            else:
+                print(f"Verified equation {key} with accuracy {accuracy:.2f}.")
+
+        self.ram_equations = new_ram_equations
+
     
     def make_graph(self, svg=False):
         self.simplify_equations()
@@ -357,6 +490,8 @@ class WorldModel():
             ram  = self.rams.T
             act = self.actions.T
             n = len(self.rams)
+        print(formulae)
+        print(eval(formulae))
         count_matches = np.sum(eval(formulae))
         accuracy = count_matches / n * 100
         print(f"Accuracy of formulae `{formulae}`: {accuracy: .2f}%")

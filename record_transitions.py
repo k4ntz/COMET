@@ -41,7 +41,7 @@ class Renderer:
         self.keys2actions = self.env.unwrapped.get_keys_to_action()
         self.frame = 0
         self.transitions = []
-        self.total_frames = 10000
+        self.total_frames = 2000
         self.pbar = tqdm(total=self.total_frames)
 
     def run(self):
