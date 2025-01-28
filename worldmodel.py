@@ -329,7 +329,12 @@ class WorldModel():
         # normalize
         counts = counts / np.sum(counts)
         # sample
-        return np.random.choice(unique_vals, p=counts)
+        choice = np.random.choice(unique_vals, p=counts)
+        # TODO: just for testing, shouldn't be a problem if the correct update-rule is found.
+        if ram_idx == 49:
+            while choice > 170 or choice < 65:
+                choice = np.random.choice(unique_vals, p=counts)
+        return choice 
 
     def validate_transitions(self, n_game_steps=20, acc_threshold=0.8):
         """
@@ -348,6 +353,9 @@ class WorldModel():
         # TODO: remove
         self.ram_equations = {
             "nram[49]": "ram[49] - ram[58]",
+            "nram[54]": "ram[54] + ram[56]",
+            "nram[21]": "ram[21] + ram[56]",
+            "nram[51]": "ram[60]"
         }
 
         new_ram_equations = self.ram_equations.copy()
@@ -410,7 +418,6 @@ class WorldModel():
                 # rhs vals are values of the current step, so we can only go up to n-1 
                 for i in range(n_game_steps-1):
                     rhs = eqs[i].split("==")[1]
-                    # TODO: how to determine which values are signed or unsigned?
                     # transform unsigned values to signed
                     for idx in rhs_ram_idxs:
                         state = rhs_state[i].copy()
@@ -419,8 +426,9 @@ class WorldModel():
                         rhs = rhs.replace(f"ram[{idx}]", str(state[int(idx)]))
 
                     eqs[i] = eqs[i].split("==")[0] + "==" + rhs
-                print(eqs)
+                print(rhs_idx, eqs)
                 eqs_val = [eval(eq) for eq in eqs]
+                print(eqs_val)
                 num_correct += eqs_val.count(True)
             accuracy = (num_correct/len(rhs_ram_idxs)) / (n_game_steps-1)
             if accuracy < acc_threshold:

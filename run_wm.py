@@ -2,7 +2,7 @@ from worldmodel import WorldModel
 
 # wm = WorldModel(game="Pong")
 wm = WorldModel(game="PongNoFrameskip-v4")
-wm.load_transitions(sample_k=100)
+wm.load_transitions(sample_k=500)
 # wm.load_objects()
 #wm.update_object_bounds()
 #wm.detect_objects()
