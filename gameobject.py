@@ -9,6 +9,7 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 from utils import replace_float_with_int_if_close, encode_image_to_base64, \
                   convert_to_svg, RAM_PATTERN, ACT_PATTERN
+import numpy as np
 
 COLORS = {
     "blue": '#4bc9dd',
@@ -168,6 +169,8 @@ class GameObject():
         rams = []
         for prop in self.properties:
             if self.equations[prop] is not None:
+                if type(self.equations[prop]) is not str:
+                   continue 
                 if "ram" in self.equations[prop]:
                     ram_idx = re.search(RAM_PATTERN, self.equations[prop]).group(1)
                     if not ram_idx in rams:

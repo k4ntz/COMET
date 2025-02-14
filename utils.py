@@ -59,8 +59,10 @@ def get_model(l1_loss=True, min_val=None, max_val=None, mod_max=None,
 
 
     return PySRRegressor(
-        population_size=50,
-        niterations = 50,  # < Increase me for better results
+        # population_size=50,
+        population_size=100,
+        # niterations = 50,  # < Increase me for better results
+        niterations = 100,  # < Increase me for better results
         maxsize = 10,
         binary_operators = binops,
         unary_operators = un_ops,

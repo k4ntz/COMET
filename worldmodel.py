@@ -197,6 +197,26 @@ class WorldModel():
                 obj.equations[prop] = eq
             print(f"Storing equation: `{eq}`.")
 
+    def store_equations(self):
+        """
+        Store the equations in a json file.
+        """
+        equations = {}
+        for obj in self.objects:
+            equations[obj.name] = obj.equations
+        # create directory if it does not exist
+        os.makedirs("equations", exist_ok=True)
+        with open(f'equations/{self.game}.json', 'w') as f:
+            json.dump(equations, f)
+    
+    def load_equations(self):
+        """
+        Load the equations from a json file.
+        """
+        with open(f'equations/{self.game}.json', 'r') as f:
+            equations = json.load(f)
+        for obj in self.objects:
+            obj.equations = equations[obj.name]
 
     def _find_ram(self, obj):
         """
@@ -219,6 +239,8 @@ class WorldModel():
         """
         for obj in self.objects:
             self._find_ram(obj)
+        print("All objects' properties have been regressed. Storing equations.")
+        self.store_equations()
 
     def _find_hidden_state(self, ram_idx, separate_on_upd=False):
         """
@@ -301,21 +323,22 @@ class WorldModel():
         for obj in self.objects:
             self.find_transitions(obj)
 
-    def get_good_game_state(self, n_game_steps=100):
+    def get_good_game_state(self, n_game_steps=30):
         # prerun some steps to ensure good game state
         self.oc_env.reset()
+        #TODO: add other games
+        important_object_list = ["Player", "Ball", "Enemy"]
         steps = 0
         obs = None
         prev_obs = None
         finished = True
-        #TODO: find better way than hardcoding ball pos
-        ball_xy = [0, 0]
+        objects_available = [obj.visible for obj in self.oc_env.objects if obj.category in important_object_list]
         # run until different state is reached
-        while steps < n_game_steps or np.array_equal(obs, prev_obs) or finished or (ball_xy[0] == 0 and ball_xy[1] == 0):
+        while steps < n_game_steps or np.array_equal(obs, prev_obs) or finished or not all(objects_available) or len(objects_available) != len(important_object_list):
             prev_obs = obs
             action = self.oc_env.action_space.sample()
             obs, reward, term, trunc, info = self.oc_env.step(action)
-            ball_xy = obs[0][2:4]
+            objects_available = [obj.visible for obj in self.oc_env.objects if obj.category in important_object_list]
             finished = term or trunc
             steps += 1
 
@@ -324,16 +347,26 @@ class WorldModel():
         Sample from  the distribution of a certain ram cell from stored transitions.
         Note: Currently, only categorical distributions are supported.
         """
-        unique_vals, counts = np.unique(self.rams[:, ram_idx], return_counts=True)
+        # valid means in the sense that the game is not stopped/ball is out of bounds
+        # find first object that has ram_idx in connected_rams (hopefully is the correct one)
+        found = False
+        for object in self.objects:
+            if str(ram_idx) in object.connected_rams:
+                found = True
+                break
+        
+        # ensure that only valid ram-states can be sampled by sorting out invisible NaO
+        # e.g. ball is set to NaO if out of bounds
+        rams = self.rams
+        if found:
+            visibles = object.visibles
+            rams = rams[visibles]
+        unique_vals, counts = np.unique(rams[:, ram_idx], return_counts=True)
 
         # normalize
         counts = counts / np.sum(counts)
         # sample
         choice = np.random.choice(unique_vals, p=counts)
-        # TODO: just for testing, shouldn't be a problem if the correct update-rule is found.
-        if ram_idx == 49:
-            while choice > 170 or choice < 65:
-                choice = np.random.choice(unique_vals, p=counts)
         return choice 
 
     def validate_transitions(self, n_game_steps=20, acc_threshold=0.8):
@@ -361,6 +394,7 @@ class WorldModel():
         new_ram_equations = self.ram_equations.copy()
         # check each equation individually
         for key in self.ram_equations.keys():
+            print("Validating equation: ", key)
             lhs_ram_idx = re.findall(RAM_PATTERN, key)[0]
             rhs_ram_idxs = re.findall(RAM_PATTERN, self.ram_equations[key])
             # remove any duplicates
@@ -372,6 +406,7 @@ class WorldModel():
 
             # intervene on each idx on the right hand side individually (in case there are interdependencies)
             for idx in rhs_ram_idxs:
+                print(idx)
                 # run game for a bit (to reach a good state)
                 self.get_good_game_state(10)
 
@@ -382,7 +417,7 @@ class WorldModel():
                     # store lhs (nram) of previous step
                     lhs_ram_states[idx].append(ram_state[int(lhs_ram_idx)])
 
-                    # intervene 
+                    # intervene (only samples credible values for now)
                     new_val = self.sample_ram_dist(int(idx))
                     if int(idx) in self._signed_converted and new_val < 0:
                         # transform to unsigned
